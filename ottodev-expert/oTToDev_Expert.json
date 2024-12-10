@@ -33,12 +33,12 @@
         },
         "options": {}
       },
-      "id": "7a8a7e8e-a51d-40ac-af37-2db52c78c189",
+      "id": "dca2c9ed-5239-4625-b2c4-1d606d19dba5",
       "name": "Edit Fields",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        660,
+        920,
         460
       ]
     },
@@ -56,26 +56,12 @@
           }
         }
       },
-      "id": "9000e870-49f7-420e-a31b-e1519b0f7bf1",
+      "id": "4848fc52-dcfd-4c02-a475-2bb7ba52750a",
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1540,
-        460
-      ]
-    },
-    {
-      "parameters": {
-        "url": "https://raw.githubusercontent.com/coleam00/bolt.new-any-llm/refs/heads/main/README.md",
-        "options": {}
-      },
-      "id": "d1635479-b8c7-4244-a460-4e631ff33a3d",
-      "name": "HTTP Request",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        900,
+        1560,
         460
       ]
     },
@@ -85,50 +71,192 @@
         "sessionKey": "={{ $('Edit Fields').item.json.session_id }}",
         "tableName": "messages"
       },
-      "id": "1582b320-491c-483a-89b5-eb7d0c7500d5",
+      "id": "b72d76a2-86c9-48cd-b477-6fd9d927c698",
       "name": "Postgres Chat Memory",
       "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
       "typeVersion": 1,
       "position": [
-        1200,
+        1220,
         680
       ],
       "credentials": {
         "postgres": {
-          "id": "tzFFADvpFiUtaZtb",
-          "name": "Supabase Postgres"
+          "id": "erIa9T64hNNeDuvB",
+          "name": "Prod Postgres account"
         }
       }
     },
     {
       "parameters": {
-        "model": "gpt-4o-mini",
         "options": {}
       },
-      "id": "f3c4319a-0996-4be6-a758-e9773d217bbb",
+      "id": "697449d0-776f-410c-9f8a-39e7eeb2220b",
       "name": "OpenAI Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1,
       "position": [
-        1060,
+        1080,
         680
       ],
       "credentials": {
         "openAiApi": {
-          "id": "JJjD91oisPv9cs01",
+          "id": "05Q6PbnSdyEcu9Ze",
           "name": "OpenAi account"
         }
       }
     },
     {
-      "parameters": {},
-      "id": "e6150445-335a-4401-8fce-d6671f4425e4",
-      "name": "Calculator",
-      "type": "@n8n/n8n-nodes-langchain.toolCalculator",
+      "parameters": {
+        "url": "https://coleam00.github.io/bolt.new-any-llm/",
+        "options": {}
+      },
+      "id": "9253b800-e76b-4a84-9345-bda3ba183279",
+      "name": "HTTP Request1",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        840,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "links",
+              "cssSelector": "nav a.md-nav__link",
+              "returnValue": "attribute",
+              "attribute": "href",
+              "returnArray": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "f3d1ed14-cecd-405e-a13f-3285f5ef1a8b",
+      "name": "HTML",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        1040,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "320649a3-9c46-4067-bdec-7566a3e588ed",
+              "leftValue": "={{ $json.links }}",
+              "rightValue": "/",
+              "operator": {
+                "type": "string",
+                "operation": "endsWith"
+              }
+            },
+            {
+              "id": "dbd44d34-9f7e-4eae-9e14-cd82a5b33387",
+              "leftValue": "={{ $json.links }}",
+              "rightValue": ".",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "8be35a61-83e2-4daf-aa89-1339e6213891",
+      "name": "Filter",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "links",
+        "options": {}
+      },
+      "id": "cbc5bc65-a07b-4f04-8eec-1ecc95472b83",
+      "name": "Split Out",
+      "type": "n8n-nodes-base.splitOut",
       "typeVersion": 1,
       "position": [
-        1360,
-        680
+        1220,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ `https://coleam00.github.io/bolt.new-any-llm/${$json.links.replaceAll(\".\", \"\")}` }}",
+        "options": {}
+      },
+      "id": "e0b26a8e-1a61-4921-9100-bb826fc8ac9a",
+      "name": "HTTP Request2",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1580,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "extractHtmlContent",
+        "extractionValues": {
+          "values": [
+            {
+              "key": "content",
+              "cssSelector": "article",
+              "returnArray": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bf070d33-4bbe-4d51-8df6-86c6e6a74d89",
+      "name": "HTML1",
+      "type": "n8n-nodes-base.html",
+      "typeVersion": 1.2,
+      "position": [
+        1780,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "fieldsToSummarize": {
+          "values": [
+            {
+              "aggregation": "concatenate",
+              "field": "content",
+              "separateBy": "other",
+              "customSeparator": "\\n\\nNext page:\\n\\n"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "414bcbde-4695-4d8d-b6b9-4c8728d9acd8",
+      "name": "Summarize",
+      "type": "n8n-nodes-base.summarize",
+      "typeVersion": 1,
+      "position": [
+        1980,
+        920
       ]
     },
     {
@@ -139,54 +267,129 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "1c99d8bb-883a-4044-88ab-c3efc5cc2eea",
+      "id": "c87f3c57-17bd-4c19-a178-af742e8b8686",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        440,
+        680,
         460
       ],
       "webhookId": "ba5e9235-01af-47f8-9f72-29df862bfa0f",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "v67X98kmInAy5dLR",
-          "name": "Live Agent Studio Header Auth"
+          "id": "o5akNgXQQR74Sezh",
+          "name": "Header Auth account"
         }
       }
+    },
+    {
+      "parameters": {},
+      "id": "8c0645ff-19a5-4036-8852-21372c2221e1",
+      "name": "Execute Workflow Trigger",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1,
+      "position": [
+        420,
+        920
+      ]
+    },
+    {
+      "parameters": {
+        "name": "fetch_ottodev_documentation",
+        "description": "Call this tool to get the oTToDev documentation when you need to answer a question for the user.",
+        "workflowId": {
+          "__rl": true,
+          "value": "={{ $workflow.id }}",
+          "mode": "id"
+        },
+        "responsePropertyName": "concatenated_content",
+        "fields": {
+          "values": [
+            {
+              "name": "session_id",
+              "stringValue": "={{$('Edit Fields').item.json.session_id}}"
+            }
+          ]
+        }
+      },
+      "id": "110b01dc-f42c-48d8-a13b-4fcba96eb92e",
+      "name": "Call n8n Workflow Tool",
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1360,
+        680
+      ]
     },
     {
       "parameters": {
         "promptType": "define",
         "text": "={{ $('Edit Fields').item.json.query }}",
         "options": {
-          "systemMessage": "=You are an expert at an open source AI coding assistant called oTToDev. Here is the full README to use to answer user questions:\n\n{{ $json.data }}\n\nYou use this README to answer user questions to the best of your ability. If you don't know the answer and the README doesn't help you with it, just be honest and tell the user you don't know the answer and they can instead post a question on the Discourse community for oTToDev (the Think Tank):\n\nhttps://thinktank.ottomator.ai"
+          "systemMessage": "=You are an expert at an open source AI coding assistant called oTToDev. You also have access to fetch the full documentation for oTToDev to answer any questions for the user.\n\nYou use this README to answer user questions to the best of your ability. If you don't know the answer and the guide/FAQ doesn't help you with it, just be honest and tell the user you don't know the answer and they can instead post a question on the Discourse community for oTToDev (the Think Tank):\n\nhttps://thinktank.ottomator.ai"
         }
       },
-      "id": "a89a2c54-bd25-4071-8e62-0f203a1afcfa",
+      "id": "c62238b1-8dc2-41cf-a5f4-10f4be918ee1",
       "name": "AI Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.6,
       "position": [
-        1140,
+        1160,
         460
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "messages",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "session_id",
+              "fieldValue": "={{ $json.session_id }}"
+            },
+            {
+              "fieldId": "message",
+              "fieldValue": "={{ {\n\"type\": \"ai\",\n\"content\": \"-> Reading oTToDev documentation...\",\n\"data\": {},\n\"additional_kwargs\": {},\n\"response_metadata\": {}\n} }}"
+            }
+          ]
+        }
+      },
+      "id": "0f4ba406-3442-41b0-846a-31dbf8f6d56f",
+      "name": "Add AI Documentation Message to DB",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        620,
+        920
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "# oTToDev Expert Agent\n\nAuthor: [Cole Medin](https://www.youtube.com/@ColeMedin)\n\nThe oTToDev Expert Agent is a specialized n8n AI agent designed to assist users with questions and issues related to oTToDev - a powerful fork of Bolt.new that enables users to choose from multiple LLM providers for web development. It does this by researching the oTToDev documentation for the user.\n\n## Purpose\n\nThis agent serves as a knowledgeable assistant that:\n- Answers questions about oTToDev's features and capabilities\n- Helps troubleshoot installation and setup issues\n- Provides guidance on using different LLM providers\n- Assists with understanding oTToDev's architecture and components\n- Offers support for contributing to the project",
+        "height": 441.41627906976817,
+        "width": 651.0139534883727,
+        "color": 6
+      },
+      "id": "07422adc-27e3-4d6a-813e-4b34b58b4b65",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        420
       ]
     }
   ],
   "pinData": {},
   "connections": {
     "Edit Fields": {
-      "main": [
-        [
-          {
-            "node": "HTTP Request",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "HTTP Request": {
       "main": [
         [
           {
@@ -219,12 +422,67 @@
         ]
       ]
     },
-    "Calculator": {
-      "ai_tool": [
+    "HTTP Request1": {
+      "main": [
         [
           {
-            "node": "AI Agent",
-            "type": "ai_tool",
+            "node": "HTML",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML": {
+      "main": [
+        [
+          {
+            "node": "Split Out",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Out": {
+      "main": [
+        [
+          {
+            "node": "Filter",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request2",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request2": {
+      "main": [
+        [
+          {
+            "node": "HTML1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTML1": {
+      "main": [
+        [
+          {
+            "node": "Summarize",
+            "type": "main",
             "index": 0
           }
         ]
@@ -241,11 +499,44 @@
         ]
       ]
     },
+    "Execute Workflow Trigger": {
+      "main": [
+        [
+          {
+            "node": "Add AI Documentation Message to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Call n8n Workflow Tool": {
+      "ai_tool": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
     "AI Agent": {
       "main": [
         [
           {
             "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add AI Documentation Message to DB": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request1",
             "type": "main",
             "index": 0
           }
@@ -257,11 +548,18 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "fdf3b017-fe09-44bc-ab8d-dafa56f2372e",
+  "versionId": "c4f10f91-0a05-4811-879d-eab77e28a906",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "620f0d7e3114cb344761d7d45a21ef2a32096f91d8696e7057756042e1999e2c"
+    "instanceId": "f65a08c0adc90a3cde2c633d24c6daecde3817033b75588ee10a781b0b7aa3f5"
   },
-  "id": "8pN1MhQ2S8njMMMI",
-  "tags": []
+  "id": "u43sbX4DVrbxo1Hj",
+  "tags": [
+    {
+      "createdAt": "2024-12-09T14:35:20.507Z",
+      "updatedAt": "2024-12-09T14:35:20.507Z",
+      "id": "wBUwbX8AS8QmBHOC",
+      "name": "studio-prod"
+    }
+  ]
 }

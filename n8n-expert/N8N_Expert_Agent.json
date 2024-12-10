@@ -1,5 +1,5 @@
 {
-  "name": "N8N Expert Agent",
+  "name": "N8N Expert",
   "nodes": [
     {
       "parameters": {
@@ -33,13 +33,13 @@
         },
         "options": {}
       },
-      "id": "3d3bfc7e-a5e6-4a55-8d14-e0b8a46d1767",
+      "id": "f4a396a1-0e77-4ca8-9150-d27c4af2ee77",
       "name": "Edit Fields",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        540,
-        220
+        640,
+        640
       ]
     },
     {
@@ -47,17 +47,17 @@
         "model": "text-embedding-3-small",
         "options": {}
       },
-      "id": "429734f0-f1d4-47bf-8a4b-638871be8349",
+      "id": "3f7da8d5-e9d3-4c0b-9648-f23cdfb0dbfa",
       "name": "Embeddings OpenAI",
       "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
       "typeVersion": 1,
       "position": [
-        980,
-        440
+        1160,
+        820
       ],
       "credentials": {
         "openAiApi": {
-          "id": "JJjD91oisPv9cs01",
+          "id": "05Q6PbnSdyEcu9Ze",
           "name": "OpenAi account"
         }
       }
@@ -75,13 +75,13 @@
         },
         "options": {}
       },
-      "id": "ff54cf15-ea77-4cc5-ba78-97f5a7ec3dcf",
+      "id": "aad41c91-c6d6-48c3-9e43-346a5069c667",
       "name": "Aggregate",
       "type": "n8n-nodes-base.aggregate",
       "typeVersion": 1,
       "position": [
-        1840,
-        220
+        1720,
+        640
       ]
     },
     {
@@ -89,17 +89,17 @@
         "model": "gpt-4o",
         "options": {}
       },
-      "id": "e805f26e-9066-4058-90e7-cc627a2a1088",
+      "id": "cf371ddb-1521-4e9c-813c-5e5c7fdbce44",
       "name": "OpenAI Chat Model",
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1,
       "position": [
-        1380,
-        400
+        1480,
+        560
       ],
       "credentials": {
         "openAiApi": {
-          "id": "JJjD91oisPv9cs01",
+          "id": "05Q6PbnSdyEcu9Ze",
           "name": "OpenAi account"
         }
       }
@@ -112,19 +112,19 @@
         "filterType": "string",
         "filterString": "=workflow_id=in.{{ $json.query_string }}"
       },
-      "id": "0e0a6188-11d6-4866-b2d7-b133c44469e2",
+      "id": "16abcadb-db84-4be0-821d-725cd53ac196",
       "name": "Supabase",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        2580,
-        220
+        2340,
+        400
       ],
       "alwaysOutputData": true,
       "credentials": {
         "supabaseApi": {
-          "id": "azIAMHxdSaq5XhoW",
-          "name": "Supabase account"
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
         }
       }
     },
@@ -140,26 +140,26 @@
         },
         "options": {}
       },
-      "id": "a14433af-990b-4472-8d3c-40523c69937b",
+      "id": "1e00bcc2-ea78-4b35-8c81-2ee625c7d5a2",
       "name": "Summarize",
       "type": "n8n-nodes-base.summarize",
       "typeVersion": 1,
       "position": [
-        2080,
-        220
+        1940,
+        400
       ]
     },
     {
       "parameters": {
         "jsCode": "// Loop over input items and add a new field called 'myNewField' to the JSON of each one\nfor (const item of $input.all()) {\n  item.json.query_string = $('Summarize').first().json.concatenated_workflow_ids.replaceAll(\"\\\"\", \"\").replaceAll(\"[\", \"(\").replaceAll(\"]\", \")\");\n}\n\nreturn $input.all();"
       },
-      "id": "d38d1f56-c562-45fd-8abb-9fc4eaf311d7",
+      "id": "64627fc4-d2e5-42d4-a0b5-3bcd931d24ab",
       "name": "Code",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        2300,
-        220
+        2140,
+        640
       ]
     },
     {
@@ -177,13 +177,13 @@
         "includeOtherFields": true,
         "options": {}
       },
-      "id": "8a988f7e-0d09-4334-89b2-1d8f1231cbfb",
+      "id": "4a14b34b-ecb6-4d43-836c-ceec97f626cd",
       "name": "Edit Fields1",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        3060,
-        220
+        2720,
+        420
       ]
     },
     {
@@ -202,18 +202,18 @@
           ]
         }
       },
-      "id": "ca42aa59-37b7-48aa-8cfb-b1e871ed8f2e",
+      "id": "b9f99ec8-96df-45ff-9d41-c78328889a1e",
       "name": "Supabase1",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        3280,
-        220
+        2920,
+        640
       ],
       "credentials": {
         "supabaseApi": {
-          "id": "azIAMHxdSaq5XhoW",
-          "name": "Supabase account"
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
         }
       }
     },
@@ -222,38 +222,14 @@
         "aggregate": "aggregateAllItemData",
         "options": {}
       },
-      "id": "38a29dd3-0707-4b44-849f-6b7014332d61",
+      "id": "df095f3f-9691-419e-aca6-c43eabe14de8",
       "name": "Aggregate1",
       "type": "n8n-nodes-base.aggregate",
       "typeVersion": 1,
       "position": [
-        2820,
-        220
+        2520,
+        640
       ]
-    },
-    {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "invoke-n8n-expert",
-        "authentication": "headerAuth",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "id": "09f18e2d-3a6c-420a-a272-976abb46c2ba",
-      "name": "Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        300,
-        220
-      ],
-      "webhookId": "ba5e9235-01af-47f8-9f72-29df862bfa0f",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "v67X98kmInAy5dLR",
-          "name": "Live Agent Studio Header Auth"
-        }
-      }
     },
     {
       "parameters": {
@@ -269,13 +245,13 @@
           }
         }
       },
-      "id": "3c1b4e7b-45f8-4bc8-8d19-9a133e4fc105",
+      "id": "59550b57-845f-49ef-80c8-b14eae1d2d5a",
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        3740,
-        220
+        3320,
+        660
       ]
     },
     {
@@ -283,13 +259,13 @@
         "promptType": "define",
         "text": "=Here is a n8n workflow descriptions:\n\n{{ $json.document.pageContent }}\n\nYour job is to identify if the workflow is relevant to the user query which is:\n\n{{ $('Edit Fields').first().json.query }}\n\nOutput the workflow ID if the workflow relates to the user query. Otherwise, output -1. ONLY ever output a number, nothing else. You will always output the workflow ID or -1.\n\nThe workflow ID is: {{ $json.document.metadata.workflow_id }}\n\nThe workflow ID or -1 if the workflow doesn't relate to the user query:"
       },
-      "id": "9eb15aed-1333-4be0-b22f-f3288b839703",
+      "id": "4c49b44d-b707-41ef-8577-4939df2bc2db",
       "name": "Basic LLM Chain",
       "type": "@n8n/n8n-nodes-langchain.chainLlm",
       "typeVersion": 1.4,
       "position": [
-        1400,
-        220
+        1360,
+        400
       ]
     },
     {
@@ -312,13 +288,13 @@
         },
         "options": {}
       },
-      "id": "37947e9c-1341-49fb-a6fc-e481f052bca1",
+      "id": "416ee827-a9a5-4461-8b77-798b7ecaea50",
       "name": "Edit Fields2",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        3500,
-        220
+        3120,
+        420
       ]
     },
     {
@@ -337,18 +313,18 @@
           ]
         }
       },
-      "id": "881e9b74-e2f7-462c-b459-c5ca0ba39157",
+      "id": "79873137-cbdb-4c90-9dc6-adbcb516f6de",
       "name": "Supabase2",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        760,
-        220
+        840,
+        420
       ],
       "credentials": {
         "supabaseApi": {
-          "id": "azIAMHxdSaq5XhoW",
-          "name": "Supabase account"
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
         }
       }
     },
@@ -367,53 +343,78 @@
           "queryName": "match_summaries"
         }
       },
-      "id": "dd9eba72-5864-4dcd-90da-f297f3e96166",
+      "id": "ee10e7a4-da98-4775-b641-310ce79110a4",
       "name": "Supabase Vector Store",
       "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
       "typeVersion": 1,
       "position": [
-        980,
-        220
+        1020,
+        640
       ],
       "credentials": {
         "supabaseApi": {
-          "id": "azIAMHxdSaq5XhoW",
-          "name": "Supabase account"
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
         }
       }
+    },
+    {
+      "parameters": {
+        "content": "## The n8n Expert Agent helps you find and understand n8n automation workflows. Simply describe what you're trying to automate, and the agent will recommend relevant workflows to help you get started.\n\nAuthor: [Cole Medin](https://www.youtube.com/@ColeMedin)\n\n## For example:\n\n### User: \"I need to automatically post tweets when new blog posts are published\"\n### Agent: Here are some recommended workflows to help you get started:\n- WordPress to Twitter Auto-Poster\n- Blog RSS Feed to Social Media\n- Content Distribution Workflow\nThe agent analyzes your request and provides matching workflows from its knowledge base, along with explanations of how to implement and customize them for your needs.",
+        "height": 502.790697674419,
+        "width": 651.0139534883727,
+        "color": 6
+      },
+      "id": "1ac32a2f-f121-4b7c-bfb6-b90056c9d6bd",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -260,
+        360
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoke-n8n-expert",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "90236e22-385a-49ba-8d5c-263a60a82f33",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        460,
+        460
+      ],
+      "webhookId": "ba5e9235-01af-47f8-9f72-29df862bfa0f",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "o5akNgXQQR74Sezh",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "#### This agent is in beta, especially as its knowledgebase grows! Workflows won't always be super related to your query and sometimes it won't have any. This agent will also involve into a conversational agent eventually to help you build n8n workflows!",
+        "height": 111.41953488372111,
+        "width": 648.3795348837208
+      },
+      "id": "934e70b5-3825-4bb7-91e3-0fa786bf88e8",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -260,
+        900
+      ]
     }
   ],
-  "pinData": {
-    "Webhook": [
-      {
-        "json": {
-          "headers": {
-            "host": "n8n.chayahfitness.com",
-            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-            "content-length": "192",
-            "accept": "*/*",
-            "accept-encoding": "deflate, gzip",
-            "authorization": "Bearer 7vnvV*ELn.#FWNV(87g2WQc",
-            "content-type": "application/json",
-            "x-forwarded-for": "64.227.21.251",
-            "x-forwarded-host": "n8n.chayahfitness.com",
-            "x-forwarded-proto": "https",
-            "x-real-ip": "2601:441:4380:40b0:b4b3:724b:27e1:c4ba"
-          },
-          "params": {},
-          "query": {},
-          "body": {
-            "query": "Supabase",
-            "user_id": "google-oauth2|116467443974012389959",
-            "request_id": "f98asdyf987yasd0f987asdf8",
-            "session_id": "google-oauth2|116467443974012389959~2~8dfbddbe603d"
-          },
-          "webhookUrl": "https://n8n.chayahfitness.com/webhook-test/invoke-n8n-expert",
-          "executionMode": "test"
-        }
-      }
-    ]
-  },
+  "pinData": {},
   "connections": {
     "Embeddings OpenAI": {
       "ai_embedding": [
@@ -525,17 +526,6 @@
         ]
       ]
     },
-    "Webhook": {
-      "main": [
-        [
-          {
-            "node": "Edit Fields",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Basic LLM Chain": {
       "main": [
         [
@@ -579,17 +569,35 @@
           }
         ]
       ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "38510795-4fe9-437d-9491-081a9fc05ecd",
+  "versionId": "9cb778c5-1d8e-4af0-a6fd-8107eb8069ef",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "620f0d7e3114cb344761d7d45a21ef2a32096f91d8696e7057756042e1999e2c"
+    "instanceId": "f65a08c0adc90a3cde2c633d24c6daecde3817033b75588ee10a781b0b7aa3f5"
   },
-  "id": "U60iEW0c0Vbq8nwx",
-  "tags": []
+  "id": "e1rZ3MNMH9g4i1Yw",
+  "tags": [
+    {
+      "createdAt": "2024-12-09T14:35:20.507Z",
+      "updatedAt": "2024-12-09T14:35:20.507Z",
+      "id": "wBUwbX8AS8QmBHOC",
+      "name": "studio-prod"
+    }
+  ]
 }

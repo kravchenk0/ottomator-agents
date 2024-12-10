@@ -14,7 +14,7 @@ This repository contains the source code/workflow JSON for all the agents on the
 
 Most agents on the Live Agent Studio cost tokens to use, which are purchasable on the platform. However, when you first sign in you are given some tokens to start so you can use the agents free of charge! The biggest reason agents cost tokens is that we pay for the LLM usage since we host all the agents developed by you and the rest of the community!
 
-[Purchase Tokens](/pricing)
+[Purchase Tokens](https://studio.ottomator.ai/pricing)
 
 ## Future Plans
 
@@ -26,7 +26,7 @@ As the Live Agent Studio develops, it will become the go-to place to stay on top
 
 Head on over here to learn how to build an agent for the platform:
 
-[Developer Guide](/guide)
+[Developer Guide](https://studio.ottomator.ai/guide)
 
 ### How many tokens does it cost to use an agent?
 

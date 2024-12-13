@@ -28,6 +28,8 @@ Head on over here to learn how to build an agent for the platform:
 
 [Developer Guide](https://studio.ottomator.ai/guide)
 
+Also check out [the sample n8n agent](~sample-n8n-agent~) for a starting point of building an n8n agent for the Live Agent Studio, and [the sample Python agent](~sample-python-agent~) for Python.
+
 ### How many tokens does it cost to use an agent?
 
 Each agent will charge tokens per prompt. The number of tokens depends on the agent, as some agents use larger LLMs, some call LLMs multiple times, and some use paid APIs.

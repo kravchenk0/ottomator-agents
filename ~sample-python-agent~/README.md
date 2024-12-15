@@ -85,18 +85,47 @@ messages (
 )
 ```
 
-## Database Setup
+## Setup
 
-### Option 1: Supabase (sample_supabase_agent.py)
-Required environment variables:
-```plaintext
-SUPABASE_URL=your-project-url
-SUPABASE_SERVICE_KEY=your-service-key
-API_BEARER_TOKEN=your-chosen-token
-```
+1. **Clone Repository**
+   ```bash
+   # Clone the repository
+   git clone https://github.com/coleam00/ottomator-agents.git
+   cd ottomator-agents/~sample-python-agent~
 
-### Option 2: PostgreSQL (sample_postgres_agent.py)
-1. **Create Database Tables**
+   # Copy example environment file
+   cp .env.example .env
+
+   # Edit .env with your credentials
+   nano .env  # or use your preferred editor
+   ```
+
+2. **Configure Environment Variables**
+
+   #### Supabase Configuration
+   Required environment variables in `.env` file (do not use quotes around values):
+   ```plaintext
+   SUPABASE_URL=your-project-url
+   SUPABASE_SERVICE_KEY=your-service-key
+   API_BEARER_TOKEN=your-token-here
+   ```
+
+   > ⚠️ **Important**: For Docker, do not wrap environment variable values in quotes, even if they contain special characters. Docker will handle the values correctly without quotes.
+
+   #### PostgreSQL Configuration
+   Required environment variables:
+   ```plaintext
+   DATABASE_URL=postgresql://user:password@localhost:5432/dbname
+   API_BEARER_TOKEN=your-chosen-token
+   ```
+
+   The DATABASE_URL format is:
+   ```
+   postgresql://[user]:[password]@[host]:[port]/[database_name]
+   ```
+
+3. **Create Database Tables**
+   For both Supabase and PostgreSQL, you'll need to create the following tables:
    ```sql
    CREATE TABLE messages (
        id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
@@ -109,47 +138,55 @@ API_BEARER_TOKEN=your-chosen-token
    CREATE INDEX idx_messages_created_at ON messages(created_at);
    ```
 
-2. **Set Environment Variables**
-   ```plaintext
-   DATABASE_URL=postgresql://user:password@localhost:5432/dbname
-   API_BEARER_TOKEN=your-chosen-token
-   ```
+## Installation Methods
 
-   The DATABASE_URL format is:
-   ```
-   postgresql://[user]:[password]@[host]:[port]/[database_name]
-   ```
+### Docker Installation (Recommended)
 
-3. **Connection Pool Management**
-   The Postgres version automatically manages a connection pool:
-   - Pool is created on application startup
-   - Connections are automatically acquired and released
-   - Pool is properly closed on application shutdown
+1. Build the base image first:
+```bash
+cd ../base_python_docker
+docker build -t ottomator/base-python:latest .
+cd ../~sample-python-agent~
+```
 
-## Setting Up Your Development Environment
+2. Build the agent image (make sure Docker is running on your machine):
+```bash
+docker build -t sample-python-agent .
+```
 
-1. **Clone and Install**
-   ```bash
-   # Clone the repository
-   git clone https://github.com/coleam00/ottomator-agents.git
-   cd ottomator-agents/~sample-python-agent~
+3. Run the container:
+```bash
+docker run -d --name sample-python-agent -p 8001:8001 --env-file .env sample-python-agent
+```
 
-   # Create and activate virtual environment (recommended)
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+The agent will be available at `http://localhost:8001`.
 
-   # Install dependencies
-   pip install -r requirements.txt
-   ```
+### Local Installation
 
-2. **Configure Environment**
-   ```bash
-   # Copy example environment file
-   cp .env.example .env
+1. Create and activate virtual environment:
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-   # Edit .env with your credentials
-   nano .env  # or use your preferred editor
-   ```
+# Install dependencies
+pip install -r requirements.txt
+```
+
+2. Run the agent:
+
+For Supabase version:
+```bash
+uvicorn sample_supabase_agent:app --host 0.0.0.0 --port 8001
+```
+
+For PostgreSQL version:
+```bash
+uvicorn sample_postgres_agent:app --host 0.0.0.0 --port 8001
+```
+
+## Configuration
+
+The agent uses environment variables for configuration. You can set these variables in a `.env` file or using your operating system's environment variable settings.
 
 ## Making Your First Request
 

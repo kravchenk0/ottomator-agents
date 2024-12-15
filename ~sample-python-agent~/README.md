@@ -102,6 +102,8 @@ messages (
 
 2. **Configure Environment Variables**
 
+   > ⚠️ **Important**: For Docker, do not wrap environment variable values in quotes, even if they contain special characters. Docker will handle the values correctly without quotes.
+
    #### Supabase Configuration
    Required environment variables in `.env` file (do not use quotes around values):
    ```plaintext
@@ -109,8 +111,6 @@ messages (
    SUPABASE_SERVICE_KEY=your-service-key
    API_BEARER_TOKEN=your-token-here
    ```
-
-   > ⚠️ **Important**: For Docker, do not wrap environment variable values in quotes, even if they contain special characters. Docker will handle the values correctly without quotes.
 
    #### PostgreSQL Configuration
    Required environment variables:
@@ -142,14 +142,14 @@ messages (
 
 ### Docker Installation (Recommended)
 
-1. Build the base image first:
+1. Build the base image first (make sure Docker is running on your machine):
 ```bash
 cd ../base_python_docker
 docker build -t ottomator/base-python:latest .
 cd ../~sample-python-agent~
 ```
 
-2. Build the agent image (make sure Docker is running on your machine):
+2. Build the agent image (you can swap between Supabase and PostgreSQL versions in the `Dockerfile`):
 ```bash
 docker build -t sample-python-agent .
 ```
@@ -161,7 +161,7 @@ docker run -d --name sample-python-agent -p 8001:8001 --env-file .env sample-pyt
 
 The agent will be available at `http://localhost:8001`.
 
-### Local Installation
+### Local Installation (Docker Alternative)
 
 1. Create and activate virtual environment:
 ```bash

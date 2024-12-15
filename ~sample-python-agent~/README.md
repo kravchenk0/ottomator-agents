@@ -4,6 +4,8 @@ Author: [Cole Medin](https://www.youtube.com/@ColeMedin)
 
 This is a sample Python FastAPI agent that demonstrates the minimal required components to build an agent for the Live Agent Studio. It serves as a template and reference implementation for creating new Python-based agents.
 
+This documentation is long but only because it gives you EVERYTHING you need to build a Python based agent for the Live Agent Studio! If you spend 5 minutes reading this carefully, you'll be ready to go.
+
 ## Overview
 
 This agent provides a foundation for building AI-powered agents that can:
@@ -127,6 +129,9 @@ messages (
 3. **Create Database Tables**
    For both Supabase and PostgreSQL, you'll need to create the following tables:
    ```sql
+   -- Enable the pgcrypto extension for UUID generation
+   CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
    CREATE TABLE messages (
        id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -137,6 +142,8 @@ messages (
    CREATE INDEX idx_messages_session_id ON messages(session_id);
    CREATE INDEX idx_messages_created_at ON messages(created_at);
    ```
+
+   > Note: If you're using Supabase, the `pgcrypto` extension is already enabled by default.
 
 ## Installation Methods
 

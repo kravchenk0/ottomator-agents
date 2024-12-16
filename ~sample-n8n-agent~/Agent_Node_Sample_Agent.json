@@ -1,5 +1,5 @@
 {
-  "name": "Base Agent",
+  "name": "Agent Node Sample Agent",
   "nodes": [
     {
       "parameters": {
@@ -15,76 +15,14 @@
           }
         }
       },
-      "id": "d8db86be-41fa-4c77-a5db-e2c693f809d5",
+      "id": "c92dfb4d-571a-4e08-ba92-4216404ec455",
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1860,
-        460
+        1700,
+        400
       ]
-    },
-    {
-      "parameters": {
-        "tableId": "messages",
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "session_id",
-              "fieldValue": "={{ $json.session_id }}"
-            },
-            {
-              "fieldId": "message",
-              "fieldValue": "={{ {\n\"type\": \"human\",\n\"content\": $json.query,\n\"additional_kwargs\": {},\n\"response_metadata\": {}\n} }}"
-            }
-          ]
-        }
-      },
-      "id": "107240de-b57c-4d5e-bd85-e65a7636bbf5",
-      "name": "Add User Message to DB",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [
-        920,
-        460
-      ],
-      "credentials": {
-        "supabaseApi": {
-          "id": "hOLIm3Jeg9JcG616",
-          "name": "Prod Supabase account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "tableId": "messages",
-        "fieldsUi": {
-          "fieldValues": [
-            {
-              "fieldId": "session_id",
-              "fieldValue": "={{ $('Prep Input Fields').first().json.session_id }}"
-            },
-            {
-              "fieldId": "message",
-              "fieldValue": "={{ {\n\"type\": \"ai\",\n\"content\": $json.output,\n\"data\": $json.data,\n\"additional_kwargs\": {},\n\"response_metadata\": {}\n} }}"
-            }
-          ]
-        }
-      },
-      "id": "9ab25498-76c0-43c9-a477-fc8329cce13b",
-      "name": "Add AI Message to DB",
-      "type": "n8n-nodes-base.supabase",
-      "typeVersion": 1,
-      "position": [
-        1400,
-        460
-      ],
-      "credentials": {
-        "supabaseApi": {
-          "id": "hOLIm3Jeg9JcG616",
-          "name": "Prod Supabase account"
-        }
-      }
     },
     {
       "parameters": {
@@ -118,13 +56,13 @@
         },
         "options": {}
       },
-      "id": "a5644326-09b5-4927-a317-103cfbd91c75",
+      "id": "e423ed64-4664-4e34-b7c2-d71148963a24",
       "name": "Prep Input Fields",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        700,
-        460
+        760,
+        400
       ]
     },
     {
@@ -141,70 +79,129 @@
         },
         "options": {}
       },
-      "id": "f0da2b47-0252-45bf-948b-3729acbaeccd",
+      "id": "5881a308-ab65-4034-a449-9c1f0d90743e",
       "name": "Prep Output Fields",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        1640,
-        460
+        1460,
+        400
       ]
     },
     {
       "parameters": {
-        "content": "# Base Sample Agent\n\nAuthor: [Cole Medin](https://www.youtube.com/@ColeMedin)\n\nThis is a sample n8n workflow that demonstrates the minimal required components to build an agent for the oTTomator Live Agent Studio. It serves as a template and reference implementation for creating new agents.\n\n## Core Components\n\n1. **Webhook Endpoint**\n   - Accepts POST requests with authentication\n   - Processes incoming queries with user and session information\n   - Provides secure communication via header authentication\n\n2. **Input Processing**\n   - Extracts key fields from incoming requests:\n     - query: The user's question or command\n     - user_id: Unique identifier for the user\n     - request_id: Request tracking ID\n     - session_id: Current session identifier\n\n3. **Database Integration**\n   - Uses Supabase for message storage\n   - Records both user messages and AI responses\n   - Maintains conversation history with metadata\n\n4. **Response Handling**\n   - Structured response format for consistency\n   - Includes success/failure status\n   - Returns formatted responses via webhook",
-        "height": 763.4375,
-        "width": 589.875,
-        "color": 6
+        "model": "claude-3-5-haiku-20241022",
+        "options": {}
       },
-      "id": "5100d7c2-0c89-4922-a0ce-9e0df54714f9",
-      "name": "Sticky Note",
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
+      "id": "66920cf0-b301-4d0e-80ec-204696fdbf76",
+      "name": "Anthropic Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.2,
       "position": [
-        -220,
-        140
-      ]
+        980,
+        620
+      ],
+      "credentials": {
+        "anthropicApi": {
+          "id": "AiDvkdxUFBeRQmnE",
+          "name": "Anthropic account"
+        }
+      }
     },
     {
       "parameters": {
-        "content": "## Add agent logic here\n\nThis can be anything that generates output to store as the \"AI message\" in the node to the right.\n\nSee the other example n8n workflow in GitHub to see how to use the \"Agent\" node in n8n instead of this setup.",
-        "height": 235,
-        "width": 267.5,
-        "color": 6
+        "sessionIdType": "customKey",
+        "sessionKey": "={{$('Prep Input Fields').item.json.session_id}}",
+        "tableName": "messages",
+        "contextWindowLength": 10
       },
-      "id": "9c0e546d-57d9-476c-bba5-100731cbb950",
-      "name": "Sticky Note1",
-      "type": "n8n-nodes-base.stickyNote",
-      "typeVersion": 1,
+      "id": "1c06de3a-8fc4-4ccf-9dc7-b9f1f5bf692a",
+      "name": "Postgres Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
       "position": [
-        1080,
-        460
-      ]
+        1100,
+        620
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "erIa9T64hNNeDuvB",
+          "name": "Prod Postgres account"
+        }
+      }
     },
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "9a6c4630-b422-4d42-b894-81ecfe881ffe",
+        "path": "d9fec84b-86f0-4230-9fd4-c1cb392ff8b5",
         "authentication": "headerAuth",
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "85c600ae-5695-4bf5-b6dd-9e7426fb89df",
+      "id": "d6540989-6349-47aa-8c2a-8dd93b262b6e",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        460,
-        460
+        500,
+        400
       ],
-      "webhookId": "9a6c4630-b422-4d42-b894-81ecfe881ffe",
+      "webhookId": "d9fec84b-86f0-4230-9fd4-c1cb392ff8b5",
       "credentials": {
         "httpHeaderAuth": {
           "id": "o5akNgXQQR74Sezh",
           "name": "Header Auth account"
         }
       }
+    },
+    {
+      "parameters": {
+        "content": "# Agent Node Sample Agent\n\nAuthor: [Cole Medin](https://www.youtube.com/@ColeMedin)\n\nThis is a sample n8n workflow that demonstrates the minimal required components to build an agent for the oTTomator Live Agent Studio using the \"Agent\" node in n8n. The \"Agent\" node manages conversation history itself and is compatible with the Live Agent Studio.\n\n## Core Components\n\n1. **Webhook Endpoint**\n   - Accepts POST requests with authentication\n   - Processes incoming queries with user and session information\n   - Provides secure communication via header authentication\n\n2. **Input Processing**\n   - Extracts key fields from incoming requests:\n     - query: The user's question or command\n     - user_id: Unique identifier for the user\n     - request_id: Request tracking ID\n     - session_id: Current session identifier\n\n3. **Database Integration**\n   - Uses Supabase for message storage\n   - Records both user messages and AI responses\n   - Maintains conversation history with metadata\n\n4. **Response Handling**\n   - Structured response format for consistency\n   - Includes success/failure status\n   - Returns formatted responses via webhook",
+        "height": 763.4375,
+        "width": 589.875,
+        "color": 6
+      },
+      "id": "19bfc66c-0bfa-414c-b234-057b05873c75",
+      "name": "Sticky Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{$('Prep Input Fields').item.json.query}}",
+        "options": {
+          "systemMessage": "=Enter your system message here..."
+        }
+      },
+      "id": "24599191-6cd2-4b7b-aade-cf45dd1ccbb6",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        1040,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Add your own agent tools and feel free to use any provider and LLM.",
+        "height": 100.31395348837148,
+        "width": 422.59302325581405,
+        "color": 6
+      },
+      "id": "0376123d-d772-4e74-a217-b1bac0e365fb",
+      "name": "Sticky Note1",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        940,
+        760
+      ]
     }
   ],
   "pinData": {
@@ -239,23 +236,34 @@
     ]
   },
   "connections": {
-    "Add User Message to DB": {
+    "Prep Output Fields": {
       "main": [
         [
           {
-            "node": "Add AI Message to DB",
+            "node": "Respond to Webhook",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Add AI Message to DB": {
-      "main": [
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
         [
           {
-            "node": "Prep Output Fields",
-            "type": "main",
+            "node": "AI Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "AI Agent",
+            "type": "ai_memory",
             "index": 0
           }
         ]
@@ -265,18 +273,7 @@
       "main": [
         [
           {
-            "node": "Add User Message to DB",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Prep Output Fields": {
-      "main": [
-        [
-          {
-            "node": "Respond to Webhook",
+            "node": "AI Agent",
             "type": "main",
             "index": 0
           }
@@ -293,18 +290,29 @@
           }
         ]
       ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Prep Output Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "11f80a9b-342c-4619-b972-0d925afb09fa",
+  "versionId": "8e077fe3-9da1-496b-a2e5-18ae1676f71c",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "f65a08c0adc90a3cde2c633d24c6daecde3817033b75588ee10a781b0b7aa3f5"
   },
-  "id": "y0OhDoLH2yJZVJpU",
+  "id": "a4lg63apQMOxsg5A",
   "tags": [
     {
       "createdAt": "2024-12-10T13:21:06.912Z",

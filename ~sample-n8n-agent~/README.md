@@ -1,8 +1,24 @@
-# Base Sample Agent
+# Base Sample n8n Agent
 
 Author: [Cole Medin](https://www.youtube.com/@ColeMedin)
 
 This is a sample n8n workflow that demonstrates the minimal required components to build an agent for the Live Agent Studio. It serves as a template and reference implementation for creating new agents.
+
+## Available Workflows
+
+This repository includes two n8n workflow implementations:
+
+1. **Base Sample Agent** (`Base_Sample_Agent.json`)
+   - The primary workflow that demonstrates how to manage input, output, and conversation history for the Live Agent Studio
+   - Recommended for most use cases
+   - Provides complete control over conversation history management
+   - Uses Supabase for message storage
+
+2. **Agent Node Sample** (`Agent_Node_Sample_Agent.json`)
+   - A variation that utilizes n8n's built-in "Agent" node
+   - Simplified implementation where conversation history is managed by the Agent node
+   - Fully compatible with the Live Agent Studio
+   - Ideal for simpler agent use cases
 
 ## Core Components
 
@@ -19,7 +35,7 @@ This is a sample n8n workflow that demonstrates the minimal required components 
      - session_id: Current session identifier
 
 3. **Database Integration**
-   - Uses Supabase for message storage
+   - Uses Supabase for message storage (Agent Node variation is any Postgres database)
    - Records both user messages and AI responses
    - Maintains conversation history with metadata
 
@@ -32,7 +48,7 @@ This is a sample n8n workflow that demonstrates the minimal required components 
 
 1. **Webhook Node**
    - Entry point for all requests
-   - Validates authentication headers (optional, we can add once we host for you on the studio)
+   - Validates authentication headers (optional, we can add once we host for you on the Studio)
    - Routes incoming POST requests
 
 2. **Prep Input Fields Node**
@@ -43,6 +59,7 @@ This is a sample n8n workflow that demonstrates the minimal required components 
 3. **Database Nodes**
    - "Add User Message to DB": Records incoming user queries
    - "Add AI Message to DB": Stores AI responses
+   - For the Agent Node variation, this is handled by the "Agent" node
 
 4. **Output Preparation**
    - Sets success status
@@ -65,7 +82,7 @@ This is a sample n8n workflow that demonstrates the minimal required components 
 
 1. Import this workflow as a template for new agents
 2. Configure the required credentials:
-   - Set up header authentication (optional, we can add once we host for you on the studio)
+   - Set up header authentication (optional, we can add once we host for you on the Studio)
    - Configure Supabase connection
 3. Customize the workflow by adding:
    - Additional processing nodes

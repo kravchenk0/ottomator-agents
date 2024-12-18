@@ -1,21 +1,21 @@
-# oTToDev Expert Agent
+# bolt.diy Expert Agent
 
 Author: [Cole Medin](https://www.youtube.com/@ColeMedin)
 
-The oTToDev Expert Agent is a specialized n8n AI agent designed to assist users with questions and issues related to oTToDev - a powerful fork of Bolt.new that enables users to choose from multiple LLM providers for web development.
+The bolt.diy Expert Agent is a specialized n8n AI agent designed to assist users with questions and issues related to bolt.diy - the official open source bolt.new that enables users to choose from multiple LLM providers for web development.
 
 ## Purpose
 
 This agent serves as a knowledgeable assistant that:
-- Answers questions about oTToDev's features and capabilities
+- Answers questions about bolt.diy's features and capabilities
 - Helps troubleshoot installation and setup issues
 - Provides guidance on using different LLM providers
-- Assists with understanding oTToDev's architecture and components
+- Assists with understanding bolt.diy's architecture and components
 - Offers support for contributing to the project
 
 ## Knowledge Base
 
-The agent's responses are based on the official oTToDev documentation, which includes:
+The agent's responses are based on the official bolt.diy documentation, which includes:
 - Installation and setup instructions
 - Available LLM integrations
 - Feature documentation
@@ -25,19 +25,19 @@ The agent's responses are based on the official oTToDev documentation, which inc
 
 ## How to Use
 
-Simply ask any question related to oTToDev, and the agent will search through the documentation to provide accurate and helpful responses. The agent can assist with:
+Simply ask any question related to bolt.diy, and the agent will search through the documentation to provide accurate and helpful responses. The agent can assist with:
 
 1. Setup and Installation
 2. LLM Provider Configuration
 3. Feature Usage
 4. Troubleshooting
-5. Contributing to oTToDev
+5. Contributing to bolt.diy
 6. Understanding the Project Roadmap
 
 ## Examples
 
 Here are some example questions you can ask:
-- "How do I install oTToDev?"
+- "How do I install bolt.diy?"
 - "Which LLM providers are supported?"
 - "How can I contribute to the project?"
 - "What's the process for adding a new LLM provider?"
@@ -46,14 +46,14 @@ Here are some example questions you can ask:
 ## Limitations
 
 The agent's knowledge is based on the current documentation. For the most up-to-date information, always refer to:
-- [oTToDev Documentation](https://coleam00.github.io/bolt.new-any-llm/)
-- [oTToDev Community](https://thinktank.ottomator.ai)
-- [GitHub Repository](https://github.com/coleam00/bolt.new-any-llm)
+- [bolt.diy Documentation](https://stackblitz-labs.github.io/bolt.diy/)
+- [bolt.diy Community](https://thinktank.ottomator.ai)
+- [GitHub Repository](https://github.com/stackblitz-labs/bolt.diy)
 
 ## Support
 
 If you need additional support or have questions that the agent cannot answer, please:
-1. Join the oTToDev community at https://thinktank.ottomator.ai
+1. Join the bolt.diy community at https://thinktank.ottomator.ai
 2. Create an issue on the GitHub repository
 3. Check the FAQ section in the documentation
 

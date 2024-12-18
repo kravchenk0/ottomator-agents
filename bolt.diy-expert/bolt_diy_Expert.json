@@ -1,5 +1,5 @@
 {
-  "name": "oTToDev Expert",
+  "name": "bolt.diy Expert",
   "nodes": [
     {
       "parameters": {
@@ -107,7 +107,7 @@
     },
     {
       "parameters": {
-        "url": "https://coleam00.github.io/bolt.new-any-llm/",
+        "url": "https://stackblitz-labs.github.io/bolt.diy/",
         "options": {}
       },
       "id": "9253b800-e76b-4a84-9345-bda3ba183279",
@@ -201,7 +201,7 @@
     },
     {
       "parameters": {
-        "url": "={{ `https://coleam00.github.io/bolt.new-any-llm/${$json.links.replaceAll(\".\", \"\")}` }}",
+        "url": "={{ `https://stackblitz-labs.github.io/bolt.diy/${$json.links.replaceAll(\".\", \"\")}` }}",
         "options": {}
       },
       "id": "e0b26a8e-1a61-4921-9100-bb826fc8ac9a",
@@ -260,30 +260,6 @@
       ]
     },
     {
-      "parameters": {
-        "httpMethod": "POST",
-        "path": "invoke-ottodev-expert",
-        "authentication": "headerAuth",
-        "responseMode": "responseNode",
-        "options": {}
-      },
-      "id": "c87f3c57-17bd-4c19-a178-af742e8b8686",
-      "name": "Webhook",
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2,
-      "position": [
-        680,
-        460
-      ],
-      "webhookId": "ba5e9235-01af-47f8-9f72-29df862bfa0f",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "o5akNgXQQR74Sezh",
-          "name": "Header Auth account"
-        }
-      }
-    },
-    {
       "parameters": {},
       "id": "8c0645ff-19a5-4036-8852-21372c2221e1",
       "name": "Execute Workflow Trigger",
@@ -324,23 +300,6 @@
     },
     {
       "parameters": {
-        "promptType": "define",
-        "text": "={{ $('Edit Fields').item.json.query }}",
-        "options": {
-          "systemMessage": "=You are an expert at an open source AI coding assistant called oTToDev. You also have access to fetch the full documentation for oTToDev to answer any questions for the user.\n\nYou use this README to answer user questions to the best of your ability. If you don't know the answer and the guide/FAQ doesn't help you with it, just be honest and tell the user you don't know the answer and they can instead post a question on the Discourse community for oTToDev (the Think Tank):\n\nhttps://thinktank.ottomator.ai"
-        }
-      },
-      "id": "c62238b1-8dc2-41cf-a5f4-10f4be918ee1",
-      "name": "AI Agent",
-      "type": "@n8n/n8n-nodes-langchain.agent",
-      "typeVersion": 1.6,
-      "position": [
-        1160,
-        460
-      ]
-    },
-    {
-      "parameters": {
         "tableId": "messages",
         "fieldsUi": {
           "fieldValues": [
@@ -350,7 +309,7 @@
             },
             {
               "fieldId": "message",
-              "fieldValue": "={{ {\n\"type\": \"ai\",\n\"content\": \"-> Reading oTToDev documentation...\",\n\"data\": {},\n\"additional_kwargs\": {},\n\"response_metadata\": {}\n} }}"
+              "fieldValue": "={{ {\n\"type\": \"ai\",\n\"content\": \"-> Reading bolt.diy documentation...\",\n\"data\": {},\n\"additional_kwargs\": {},\n\"response_metadata\": {}\n} }}"
             }
           ]
         }
@@ -372,7 +331,7 @@
     },
     {
       "parameters": {
-        "content": "# oTToDev Expert Agent\n\nAuthor: [Cole Medin](https://www.youtube.com/@ColeMedin)\n\nThe oTToDev Expert Agent is a specialized n8n AI agent designed to assist users with questions and issues related to oTToDev - a powerful fork of Bolt.new that enables users to choose from multiple LLM providers for web development. It does this by researching the oTToDev documentation for the user.\n\n## Purpose\n\nThis agent serves as a knowledgeable assistant that:\n- Answers questions about oTToDev's features and capabilities\n- Helps troubleshoot installation and setup issues\n- Provides guidance on using different LLM providers\n- Assists with understanding oTToDev's architecture and components\n- Offers support for contributing to the project",
+        "content": "# bolt.diy Expert Agent\n\nAuthor: [Cole Medin](https://www.youtube.com/@ColeMedin)\n\nThe bolt.diy Expert Agent is a specialized n8n AI agent designed to assist users with questions and issues related to bolt.diy - the official open source bolt.new that enables users to choose from multiple LLM providers for web development. It does this by researching the bolt.diy documentation for the user.\n\n## Purpose\n\nThis agent serves as a knowledgeable assistant that:\n- Answers questions about bolt.diy features and capabilities\n- Helps troubleshoot installation and setup issues\n- Provides guidance on using different LLM providers\n- Assists with understanding bolt.diy architecture and components\n- Offers support for contributing to the project",
         "height": 441.41627906976817,
         "width": 651.0139534883727,
         "color": 6
@@ -384,6 +343,47 @@
       "position": [
         -80,
         420
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoke-ottodev-expert",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c87f3c57-17bd-4c19-a178-af742e8b8686",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        680,
+        460
+      ],
+      "webhookId": "ba5e9235-01af-47f8-9f72-29df862bfa0f",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "o5akNgXQQR74Sezh",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Edit Fields').item.json.query }}",
+        "options": {
+          "systemMessage": "=You are an expert at an open source AI coding assistant called bolt.diy. You also have access to fetch the full documentation for bolt.diy to answer any questions for the user. The documentation URL is:\n\nhttps://stackblitz-labs.github.io/bolt.diy\n\nYou use this README to answer user questions to the best of your ability. If you don't know the answer and the guide/FAQ doesn't help you with it, just be honest and tell the user you don't know the answer and they can instead post a question on the Discourse community for bolt.diy (the Think Tank):\n\nhttps://thinktank.ottomator.ai\n\nYour answers are focused around helping beginners use bolt.diy. Keep your answers simple yet still comprehensive!"
+        }
+      },
+      "id": "c62238b1-8dc2-41cf-a5f4-10f4be918ee1",
+      "name": "AI Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [
+        1160,
+        460
       ]
     }
   ],
@@ -488,17 +488,6 @@
         ]
       ]
     },
-    "Webhook": {
-      "main": [
-        [
-          {
-            "node": "Edit Fields",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Execute Workflow Trigger": {
       "main": [
         [
@@ -521,22 +510,33 @@
         ]
       ]
     },
-    "AI Agent": {
+    "Add AI Documentation Message to DB": {
       "main": [
         [
           {
-            "node": "Respond to Webhook",
+            "node": "HTTP Request1",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Add AI Documentation Message to DB": {
+    "Webhook": {
       "main": [
         [
           {
-            "node": "HTTP Request1",
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
             "type": "main",
             "index": 0
           }
@@ -548,7 +548,7 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "c4f10f91-0a05-4811-879d-eab77e28a906",
+  "versionId": "c8db1a00-fffa-4760-8d11-4b5d51a780ff",
   "meta": {
     "templateCredsSetupCompleted": true,
     "instanceId": "f65a08c0adc90a3cde2c633d24c6daecde3817033b75588ee10a781b0b7aa3f5"

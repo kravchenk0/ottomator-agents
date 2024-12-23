@@ -85,6 +85,45 @@ messages (
 )
 ```
 
+## Frontend Integration
+
+The `VoiceflowFrontendComponent.tsx` demonstrates how Voiceflow traces from the Dialog API are integrated with the Live Agent Studio frontend. This component serves as an example of creating custom frontend components to display rich responses from your agent using the `data` field of the AI response instead of raw text output.
+
+### Key Features
+- Handles various Voiceflow trace types (text, choice, knowledgeBase)
+- Renders interactive buttons for choice responses
+- Processes structured message data from Voiceflow's Dialog API
+- Maintains conversation context through session management
+
+### Example Usage
+```typescript
+interface VoiceflowTrace {
+  type: string;
+  payload: {
+    message?: string;
+    slate?: {
+      content: Array<{
+        children: Array<{
+          text: string;
+        }>;
+      }>;
+    };
+    buttons?: VoiceflowButton[];
+  };
+}
+
+// Component renders different UI elements based on trace type
+const renderTrace = (trace: VoiceflowTrace) => {
+  switch (trace.type) {
+    case 'text':
+      return <p>{trace.payload.message}</p>;
+    case 'choice':
+      return <ButtonGroup buttons={trace.payload.buttons} />;
+    // ... handle other trace types
+  }
+};
+```
+
 ## Setup
 
 1. **Environment Variables**

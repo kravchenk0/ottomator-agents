@@ -7,7 +7,7 @@ import httpx
 import os
 
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
-from github_agent import github_agent, GitHubDeps
+from github_agent_ai import github_agent, Deps
 
 # Load environment variables
 load_dotenv()
@@ -18,7 +18,7 @@ logfire.configure(send_to_logfire='never')
 class CLI:
     def __init__(self):
         self.messages: List[ModelMessage] = []
-        self.deps = GitHubDeps(
+        self.deps = Deps(
             client=httpx.AsyncClient(),
             github_token=os.getenv('GITHUB_TOKEN'),
         )

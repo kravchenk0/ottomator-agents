@@ -1,6 +1,7 @@
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, Security, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -19,6 +20,14 @@ security = HTTPBearer()
 supabase: Client = create_client(
     os.getenv("SUPABASE_URL"),
     os.getenv("SUPABASE_SERVICE_KEY")
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Request/Response Models

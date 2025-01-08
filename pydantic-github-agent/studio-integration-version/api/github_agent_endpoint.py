@@ -1,41 +1,37 @@
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, Security, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from fastapi.middleware.cors import CORSMiddleware
-from contextlib import asynccontextmanager
+from supabase import create_client, Client
 from pydantic import BaseModel
 from dotenv import load_dotenv
-import asyncpg
-import json
+from pathlib import Path
+import httpx
 import sys
 import os
+
+from pydantic_ai.messages import (
+    ModelRequest,
+    ModelResponse,
+    UserPromptPart,
+    TextPart
+)
+
+# Add parent directory to Python path
+sys.path.append(str(Path(__file__).parent.parent))
+
+from pydantic_ai_github_agent.github_agent import github_agent, GitHubDeps
 
 # Load environment variables
 load_dotenv()
 
-# Database connection pool
-db_pool = None
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    # Startup
-    global db_pool
-    db_pool = await asyncpg.create_pool(os.getenv("DATABASE_URL"))
-    yield
-    # Shutdown
-    if db_pool:
-        await db_pool.close()
-
 # Initialize FastAPI app
-app = FastAPI(lifespan=lifespan)
+app = FastAPI()
 security = HTTPBearer()
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# Supabase setup
+supabase: Client = create_client(
+    os.getenv("SUPABASE_URL"),
+    os.getenv("SUPABASE_SERVICE_KEY")
 )
 
 # Request/Response Models
@@ -61,36 +57,26 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security))
             status_code=401,
             detail="Invalid authentication token"
         )
-    return True
+    return True    
 
 async def fetch_conversation_history(session_id: str, limit: int = 10) -> List[Dict[str, Any]]:
     """Fetch the most recent conversation history for a session."""
     try:
-        async with db_pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT id, created_at, session_id, message
-                FROM messages 
-                WHERE session_id = $1 
-                ORDER BY created_at DESC 
-                LIMIT $2
-            """, session_id, limit)
-            
-            # Convert to list and reverse to get chronological order
-            messages = [
-                {
-                    "id": str(row["id"]),
-                    "created_at": row["created_at"].isoformat(),
-                    "session_id": row["session_id"],
-                    "message": row["message"]
-                }
-                for row in rows
-            ]
-            return messages[::-1]
+        response = supabase.table("messages") \
+            .select("*") \
+            .eq("session_id", session_id) \
+            .order("created_at", desc=True) \
+            .limit(limit) \
+            .execute()
+        
+        # Convert to list and reverse to get chronological order
+        messages = response.data[::-1]
+        return messages
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to fetch conversation history: {str(e)}")
 
 async def store_message(session_id: str, message_type: str, content: str, data: Optional[Dict] = None):
-    """Store a message in the messages table."""
+    """Store a message in the Supabase messages table."""
     message_obj = {
         "type": message_type,
         "content": content
@@ -99,21 +85,20 @@ async def store_message(session_id: str, message_type: str, content: str, data: 
         message_obj["data"] = data
 
     try:
-        async with db_pool.acquire() as conn:
-            await conn.execute("""
-                INSERT INTO messages (session_id, message)
-                VALUES ($1, $2)
-            """, session_id, json.dumps(message_obj))
+        supabase.table("messages").insert({
+            "session_id": session_id,
+            "message": message_obj
+        }).execute()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
 
-@app.post("/api/sample-postgres-agent", response_model=AgentResponse)
-async def sample_postgres_agent(
+@app.post("/api/pydantic-github-agent", response_model=AgentResponse)
+async def github_agent_endpoint(
     request: AgentRequest,
     authenticated: bool = Depends(verify_token)
 ):
     try:
-        # Fetch conversation history from the DB
+        # Fetch conversation history
         conversation_history = await fetch_conversation_history(request.session_id)
         
         # Convert conversation history to format expected by agent
@@ -122,7 +107,7 @@ async def sample_postgres_agent(
             msg_data = msg["message"]
             msg_type = msg_data["type"]
             msg_content = msg_data["content"]
-            msg = {"role": msg_type, "content": msg_content}
+            msg = ModelRequest(parts=[UserPromptPart(content=msg_content)]) if msg_type == "human" else ModelResponse(parts=[TextPart(content=partial_text)])
             messages.append(msg)
 
         # Store user's query
@@ -132,28 +117,40 @@ async def sample_postgres_agent(
             content=request.query
         )            
 
-        """
-        TODO:
-        This is where you insert the custom logic to get the response from your agent.
-        Your agent can also insert more records into the database to communicate
-        actions/status as it is handling the user's question/request.
-        Additionally:
-            - Use the 'messages' array defined about for the chat history. This won't include the latest message from the user.
-            - Use request.query for the user's prompt.
-            - Use request.session_id if you need to insert more messages into the DB in the agent logic.
-        """
-        agent_response = "This is a sample agent response..."
+        # Initialize agent dependencies
+        async with httpx.AsyncClient() as client:
+            deps = GitHubDeps(
+                client=client,
+                github_token=os.getenv("GITHUB_TOKEN")
+            )
+
+            # Run the agent with conversation history
+            result = await github_agent.run(
+                request.query,
+                message_history=messages,
+                deps=deps
+            )
 
         # Store agent's response
         await store_message(
             session_id=request.session_id,
-            message_type="assistant",
-            content=agent_response
+            message_type="ai",
+            content=result.data,
+            data={"request_id": request.request_id}
         )
 
         return AgentResponse(success=True)
+
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        print(f"Error processing agent request: {str(e)}")
+        # Store error message in conversation
+        await store_message(
+            session_id=request.session_id,
+            message_type="ai",
+            content="I apologize, but I encountered an error processing your request.",
+            data={"error": str(e), "request_id": request.request_id}
+        )
+        return AgentResponse(success=False)
 
 if __name__ == "__main__":
     import uvicorn

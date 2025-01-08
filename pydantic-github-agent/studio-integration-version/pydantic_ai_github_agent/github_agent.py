@@ -13,7 +13,6 @@ import re
 import json
 
 import httpx
-from git import Repo
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.models.openai import OpenAIModel
 from devtools import debug
@@ -28,7 +27,7 @@ model = OpenAIModel(
 )
 
 @dataclass
-class Deps:
+class GitHubDeps:
     client: httpx.AsyncClient
     github_token: str | None = None
 
@@ -49,12 +48,12 @@ Your answer here...
 github_agent = Agent(
     model,
     system_prompt=system_prompt,
-    deps_type=Deps,
+    deps_type=GitHubDeps,
     retries=2
 )
 
 @github_agent.tool
-async def get_repo_info(ctx: RunContext[Deps], github_url: str) -> str:
+async def get_repo_info(ctx: RunContext[GitHubDeps], github_url: str) -> str:
     """Get repository information including size and description using GitHub API.
 
     Args:
@@ -93,7 +92,7 @@ async def get_repo_info(ctx: RunContext[Deps], github_url: str) -> str:
     )
 
 @github_agent.tool
-async def get_repo_structure(ctx: RunContext[Deps], github_url: str) -> str:
+async def get_repo_structure(ctx: RunContext[GitHubDeps], github_url: str) -> str:
     """Get the directory structure of a GitHub repository.
 
     Args:
@@ -136,7 +135,7 @@ async def get_repo_structure(ctx: RunContext[Deps], github_url: str) -> str:
     return "\n".join(structure)
 
 @github_agent.tool
-async def get_file_content(ctx: RunContext[Deps], github_url: str, file_path: str) -> str:
+async def get_file_content(ctx: RunContext[GitHubDeps], github_url: str, file_path: str) -> str:
     """Get the content of a specific file from the GitHub repository.
 
     Args:

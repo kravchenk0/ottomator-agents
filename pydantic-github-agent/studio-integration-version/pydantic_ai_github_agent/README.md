@@ -8,7 +8,7 @@ An intelligent GitHub repository analysis agent built using Pydantic AI, capable
 - Directory structure analysis
 - File content examination
 - Support for both OpenAI and OpenRouter models
-- Available as both API endpoint and command-line interface
+- Command-line interface for interactive repository analysis
 
 ## Prerequisites
 
@@ -36,25 +36,13 @@ pip install -r requirements.txt
    GITHUB_TOKEN=your_github_token  # Required for private repos
    OPEN_ROUTER_API_KEY=your_openrouter_api_key
    LLM_MODEL=your_chosen_model  # e.g., deepseek/deepseek-chat
-   SUPABASE_URL=your_supabase_url  # Only needed for endpoint
-   SUPABASE_SERVICE_KEY=your_supabase_key  # Only needed for endpoint
    ```
 
 ## Usage
 
-### FastAPI Endpoint
-
-To run the agent as an API endpoint (also compatible with the oTTomator Live Agent Studio), run the following command:
-
-```bash
-python github_agent_endpoint.py
-```
-
-The endpoint will be available at `http://localhost:8001`
-
 ### Command Line Interface
 
-For a simpler interactive experience, you can use the command-line interface:
+Run the command-line interface to interact with the GitHub analysis agent:
 
 ```bash
 python cli.py
@@ -86,10 +74,6 @@ LLM_MODEL=deepseek/deepseek-chat  # Default model
 - `cli.py`: Command-line interface for interacting with the agent
 - `requirements.txt`: Project dependencies
 
-## Live Agent Studio Version
-
-If you're interested in seeing how this agent is implemented in the Live Agent Studio, check out the `studio-integration-version` directory. This contains the production version of the agent that runs on the platform.
-
 ## Error Handling
 
 The agent includes built-in retries for API calls and proper error handling for:
@@ -97,3 +81,4 @@ The agent includes built-in retries for API calls and proper error handling for:
 - Rate limiting
 - Authentication issues
 - File not found errors
+

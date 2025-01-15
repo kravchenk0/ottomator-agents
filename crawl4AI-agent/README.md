@@ -53,6 +53,8 @@ Execute the SQL commands in `site_pages.sql` to:
 2. Enable vector similarity search
 3. Set up Row Level Security policies
 
+In Supabase, do this by going to the "SQL Editor" tab and pasting in the SQL into the editor there. Then click "Run".
+
 ### Crawl Documentation
 
 To crawl and store documentation in the vector database:
@@ -109,14 +111,14 @@ The chunker intelligently preserves:
 ## Project Structure
 
 - `crawl_pydantic_ai_docs.py`: Documentation crawler and processor
-- `pydantic_ai_agent.py`: RAG agent implementation
+- `pydantic_ai_expert.py`: RAG agent implementation
 - `streamlit_ui.py`: Web interface
 - `site_pages.sql`: Database setup commands
 - `requirements.txt`: Project dependencies
 
 ## Live Agent Studio Version
 
-If you're interested in seeing how this agent is implemented in the Live Agent Studio, check out the `studio-integration-version` directory. This contains the production version of the agent that runs on the platform.
+If you're interested in seeing how this agent is implemented in the Live Agent Studio, check out the `studio-integration-api` directory. This contains the API endpoint for the production version of the agent that runs on the platform.
 
 ## Error Handling
 

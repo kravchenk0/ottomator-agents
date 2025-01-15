@@ -9,6 +9,7 @@ import os
 
 from pydantic_ai import Agent, ModelRetry, RunContext
 from pydantic_ai.models.openai import OpenAIModel
+from openai import AsyncOpenAI
 from supabase import Client
 from typing import List
 
@@ -38,7 +39,7 @@ Then also always check the list of available documentation pages and retrieve th
 Always let the user know when you didn't find the answer in the documentation or the right URL - be honest.
 """
 
-pydantic_ai_agent = Agent(
+pydantic_ai_expert = Agent(
     model,
     system_prompt=system_prompt,
     deps_type=PydanticAIDeps,
@@ -57,7 +58,7 @@ async def get_embedding(text: str, openai_client: AsyncOpenAI) -> List[float]:
         print(f"Error getting embedding: {e}")
         return [0] * 1536  # Return zero vector on error
 
-@pydantic_ai_agent.tool
+@pydantic_ai_expert.tool
 async def retrieve_relevant_documentation(ctx: RunContext[PydanticAIDeps], user_query: str) -> str:
     """
     Retrieve relevant documentation chunks based on the query with RAG.
@@ -103,7 +104,7 @@ async def retrieve_relevant_documentation(ctx: RunContext[PydanticAIDeps], user_
         print(f"Error retrieving documentation: {e}")
         return f"Error retrieving documentation: {str(e)}"
 
-@pydantic_ai_agent.tool
+@pydantic_ai_expert.tool
 async def list_documentation_pages(ctx: RunContext[PydanticAIDeps]) -> List[str]:
     """
     Retrieve a list of all available Pydantic AI documentation pages.
@@ -129,7 +130,7 @@ async def list_documentation_pages(ctx: RunContext[PydanticAIDeps]) -> List[str]
         print(f"Error retrieving documentation pages: {e}")
         return []
 
-@pydantic_ai_agent.tool
+@pydantic_ai_expert.tool
 async def get_page_content(ctx: RunContext[PydanticAIDeps], url: str) -> str:
     """
     Retrieve the full content of a specific documentation page by combining all its chunks.

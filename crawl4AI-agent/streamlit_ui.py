@@ -22,7 +22,7 @@ from pydantic_ai.messages import (
     RetryPromptPart,
     ModelMessagesTypeAdapter
 )
-from pydantic_ai_agent import pydantic_ai_agent, PydanticAIDeps
+from pydantic_ai_expert import pydantic_ai_expert, PydanticAIDeps
 
 # Load environment variables
 from dotenv import load_dotenv
@@ -77,7 +77,7 @@ async def run_agent_with_streaming(user_input: str):
     )
 
     # Run the agent in a stream
-    async with pydantic_ai_agent.run_stream(
+    async with pydantic_ai_expert.run_stream(
         user_input,
         deps=deps,
         message_history= st.session_state.messages[:-1],  # pass entire conversation so far
@@ -105,8 +105,8 @@ async def run_agent_with_streaming(user_input: str):
 
 
 async def main():
-    st.title("Pydantic AI Expert")
-    st.write("Ask any question about Pydantic AI!")
+    st.title("Pydantic AI Agentic RAG")
+    st.write("Ask any question about Pydantic AI, the hidden truths of the beauty of this framework lie within.")
 
     # Initialize chat history in session state if not present
     if "messages" not in st.session_state:

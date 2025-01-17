@@ -1,9 +1,11 @@
 from typing import List, Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, Security, Depends
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from pydantic import BaseModel
 from dotenv import load_dotenv
+from openai import AsyncOpenAI
 from pathlib import Path
 import httpx
 import sys
@@ -16,10 +18,7 @@ from pydantic_ai.messages import (
     TextPart
 )
 
-# Add parent directory to Python path
-sys.path.append(str(Path(__file__).parent.parent))
-
-from pydantic_ai_github_agent.github_agent import github_agent, GitHubDeps
+from pydantic_ai_expert import pydantic_ai_expert, PydanticAIDeps
 
 # Load environment variables
 load_dotenv()
@@ -28,11 +27,23 @@ load_dotenv()
 app = FastAPI()
 security = HTTPBearer()
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
 # Supabase setup
 supabase: Client = create_client(
     os.getenv("SUPABASE_URL"),
     os.getenv("SUPABASE_SERVICE_KEY")
 )
+
+# OpenAI setup
+openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Request/Response Models
 class AgentRequest(BaseModel):
@@ -92,8 +103,8 @@ async def store_message(session_id: str, message_type: str, content: str, data: 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
 
-@app.post("/api/pydantic-github-agent", response_model=AgentResponse)
-async def github_agent_endpoint(
+@app.post("/api/pydantic-ai-expert", response_model=AgentResponse)
+async def pydantic_ai_expert_endpoint(
     request: AgentRequest,
     authenticated: bool = Depends(verify_token)
 ):
@@ -119,13 +130,13 @@ async def github_agent_endpoint(
 
         # Initialize agent dependencies
         async with httpx.AsyncClient() as client:
-            deps = GitHubDeps(
-                client=client,
-                github_token=os.getenv("GITHUB_TOKEN")
+            deps = PydanticAIDeps(
+                supabase=supabase,
+                openai_client=openai_client
             )
 
             # Run the agent with conversation history
-            result = await github_agent.run(
+            result = await pydantic_ai_expert.run(
                 request.query,
                 message_history=messages,
                 deps=deps

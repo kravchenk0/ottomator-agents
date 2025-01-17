@@ -5,7 +5,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from openai import AsyncOpenAI
 from pathlib import Path
 import httpx
 import sys
@@ -18,10 +17,7 @@ from pydantic_ai.messages import (
     TextPart
 )
 
-# Add parent directory to Python path
-sys.path.append(str(Path(__file__).parent.parent))
-
-from pydantic_ai_expert import pydantic_ai_expert, PydanticAIDeps
+from github_agent import github_agent, GitHubDeps
 
 # Load environment variables
 load_dotenv()
@@ -38,15 +34,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # Supabase setup
 supabase: Client = create_client(
     os.getenv("SUPABASE_URL"),
     os.getenv("SUPABASE_SERVICE_KEY")
 )
-
-# OpenAI setup
-openai_client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Request/Response Models
 class AgentRequest(BaseModel):
@@ -106,8 +98,8 @@ async def store_message(session_id: str, message_type: str, content: str, data: 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to store message: {str(e)}")
 
-@app.post("/api/pydantic-ai-expert", response_model=AgentResponse)
-async def pydantic_ai_expert_endpoint(
+@app.post("/api/pydantic-github-agent", response_model=AgentResponse)
+async def github_agent_endpoint(
     request: AgentRequest,
     authenticated: bool = Depends(verify_token)
 ):
@@ -133,13 +125,13 @@ async def pydantic_ai_expert_endpoint(
 
         # Initialize agent dependencies
         async with httpx.AsyncClient() as client:
-            deps = PydanticAIDeps(
-                supabase=supabase,
-                openai_client=openai_client
+            deps = GitHubDeps(
+                client=client,
+                github_token=os.getenv("GITHUB_TOKEN")
             )
 
             # Run the agent with conversation history
-            result = await pydantic_ai_expert.run(
+            result = await github_agent.run(
                 request.query,
                 message_history=messages,
                 deps=deps

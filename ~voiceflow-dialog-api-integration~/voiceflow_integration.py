@@ -148,8 +148,9 @@ async def sample_voiceflow_agent(
                 
                 # Extract the text for storing and the request data for action
                 user_message = parsed_data.get("text", "")
-                action = parsed_data.get("data", {}).get("request", {})
-            except json.JSONDecodeError:
+                action = parsed_data.get("data", {}).get("request", {}) or parsed_data.get("data", {}).get("action", {})
+            except json.JSONDecodeError as e:
+                print(e)
                 # If JSON parsing fails, treat it as regular text
                 pass
 

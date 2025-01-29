@@ -3,4 +3,5 @@ uvicorn
 pydantic
 supabase
 python-dotenv
+requests
 asyncpg

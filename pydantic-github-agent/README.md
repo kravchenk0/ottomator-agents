@@ -16,7 +16,7 @@ An intelligent GitHub repository analysis agent built using Pydantic AI, capable
 - GitHub Personal Access Token (for private repositories)
 - OpenRouter API key
 
-## Installation
+## Installation and Usage with Python
 
 1. Clone the repository:
 ```bash
@@ -40,11 +40,9 @@ pip install -r requirements.txt
    SUPABASE_SERVICE_KEY=your_supabase_key  # Only needed for endpoint
    ```
 
-## Usage
+### Running the FastAPI Endpoint
 
-### FastAPI Endpoint
-
-To run the agent as an API endpoint (also compatible with the oTTomator Live Agent Studio), run the following command:
+To run the agent as an API endpoint (also compatible with the oTTomator Live Agent Studio), run:
 
 ```bash
 python github_agent_endpoint.py
@@ -64,6 +62,27 @@ Example queries you can ask:
 - "What's the structure of repository https://github.com/username/repo?"
 - "Show me the contents of the main Python file in https://github.com/username/repo"
 - "What are the key features of repository https://github.com/username/repo?"
+
+## Installation and Usage with Docker
+
+If you prefer using Docker, you don't need to install Python or any dependencies locally:
+
+1. Clone the repository:
+```bash
+git clone https://github.com/coleam00/ottomator-agents.git
+cd ottomator-agents/pydantic-github-agent
+```
+
+2. Set up environment variables:
+   - Copy `.env.example` to `.env` and configure your API keys as shown in the Python installation section
+
+3. Build and run with Docker:
+```bash
+docker build -t github-agent .
+docker run -p 8001:8001 --env-file .env github-agent
+```
+
+The API endpoint will be available at `http://localhost:8001`
 
 ## Configuration
 

@@ -25,7 +25,7 @@ model = OpenAIModel(
     llm,
     base_url = 'https://openrouter.ai/api/v1',
     api_key=os.getenv('OPEN_ROUTER_API_KEY')
-)
+) if os.getenv('OPEN_ROUTER_API_KEY', None) else OpenAIModel(llm)
 
 logfire.configure(send_to_logfire='if-token-present')
 

@@ -4,7 +4,7 @@ Author: [Asvin Kumar](https://www.linkedin.com/in/asvin-kumar-1107/)
 
 An intelligent lead generation agent built using Pydantic AI and Hunter.io API, capable of finding business email addresses, verifying emails, and generating leads. The agent can search domains for email addresses, verify email validity, and provide detailed statistics about email distribution within organizations.
 
-**Note**: For the Live Agent Studio (see the studio_ versions of the scripts), the Hunter.io calls have been mocked since the API doesn't scale for the entire community trying this agent on the Studio.
+**Note**: For the Live Agent Studio (see the studio_ versions of the scripts), the Hunter.io calls have been mocked since the API does not scale for the entire community trying this agent on the Studio.
 
 ## Features
 

@@ -8,6 +8,8 @@ Author: [Ivan Milennyi](https://stellular-halva-641b23.netlify.app/)
 
 Gilbert is an AI-powered assistant designed to streamline real estate services for Alex, a fictional real estate agent operating in the United States. With access to advanced tools and integrations, Gilbert simplifies the process of finding properties for renting or buying by providing instant assistance to potential clients.
 
+Please read [Documentation](https://ivans-organization-61.gitbook.io/gilbert-ai-docs) for a better experience.
+
 ## Features
 
 - Tailored for Real Estate: Specifically supports Alex’s real estate services in the US

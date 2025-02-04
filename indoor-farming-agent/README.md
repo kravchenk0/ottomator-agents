@@ -4,6 +4,8 @@ Author: [Aditya Prabhu](https://github.com/adityaprabhu16)
 
 **Platform:** n8n (you can import the .json file into your own n8n instance to check out the flow)
 
+**NOTE**: Most of this README is from the official repo for this agent which is why the images don't work here. Visit [the repo here](https://github.com/adityaprabhu16/GenerativeAIResearch/blob/master/IndoorFarmingAgent/README.md) to see the full README with images!
+
 I've developed the following agent through n8n for the recent Ottomator hackathon.
 
 Update: video finally uploaded - here's video demo of a couple of the unique features this agent can perform:

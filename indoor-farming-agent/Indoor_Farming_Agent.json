@@ -1,22 +1,22 @@
 {
-  "name": "RAG Farming Agent",
+  "name": "Indoor Farming Agent",
   "nodes": [
     {
       "parameters": {
         "options": {}
       },
-      "id": "a146c607-d4e2-4aec-aaf0-e768b511cbba",
+      "id": "f9ffdee9-8b38-4bc2-a43f-e185a8341196",
       "name": "OpenAI Chat Model1",
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1,
       "position": [
-        640,
-        540
+        2180,
+        460
       ],
       "credentials": {
         "openAiApi": {
-          "id": "VNjQcg0XPXM42sfX",
-          "name": "OpenAi account"
+          "id": "xAeHxzxTT16sMdwS",
+          "name": "Backup OpenAI Account"
         }
       }
     },
@@ -35,13 +35,13 @@
           }
         }
       },
-      "id": "90a31cc1-8b2e-4ccd-a961-b7685ec21852",
+      "id": "a3c7e1f6-aa1d-4714-b2c5-d75f24667bda",
       "name": "Default Data Loader",
       "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
       "typeVersion": 1,
       "position": [
-        600,
-        1320
+        2140,
+        1240
       ]
     },
     {
@@ -49,18 +49,18 @@
         "model": "text-embedding-3-small",
         "options": {}
       },
-      "id": "5c19117f-993d-4899-ba2a-0fe116b807be",
+      "id": "e37e744c-bb04-46e1-a128-4d13e083d698",
       "name": "Embeddings OpenAI1",
       "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
       "typeVersion": 1,
       "position": [
-        380,
-        1380
+        1920,
+        1300
       ],
       "credentials": {
         "openAiApi": {
-          "id": "VNjQcg0XPXM42sfX",
-          "name": "OpenAi account"
+          "id": "xAeHxzxTT16sMdwS",
+          "name": "Backup OpenAI Account"
         }
       }
     },
@@ -69,13 +69,13 @@
         "name": "user_documents",
         "description": "Contains all the user's documents that you can check for context to answer user questions."
       },
-      "id": "c6767521-03de-4a7e-b870-718fc7e8c06b",
+      "id": "9d3559b7-c9de-4c2d-bc19-d2ca521c0338",
       "name": "Retrieve Documents",
       "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
       "typeVersion": 1,
       "position": [
-        260,
-        440
+        1800,
+        360
       ]
     },
     {
@@ -83,18 +83,18 @@
         "model": "text-embedding-3-small",
         "options": {}
       },
-      "id": "5a35f85e-97ee-48c0-9d76-fb07e5bb6fe0",
+      "id": "c7d54698-0f44-4dde-92aa-7e29089d311d",
       "name": "Embeddings OpenAI",
       "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
       "typeVersion": 1,
       "position": [
-        440,
-        840
+        1980,
+        760
       ],
       "credentials": {
         "openAiApi": {
-          "id": "VNjQcg0XPXM42sfX",
-          "name": "OpenAi account"
+          "id": "xAeHxzxTT16sMdwS",
+          "name": "Backup OpenAI Account"
         }
       }
     },
@@ -103,42 +103,42 @@
         "sessionIdType": "customKey",
         "sessionKey": "={{ $('Prep Input Fields').item.json.session_id }}"
       },
-      "id": "9c4390fc-a1f2-4c63-b8b6-a4eff0f13f98",
+      "id": "be640347-8482-4b77-b402-502db940e1ba",
       "name": "Postgres Chat Memory",
       "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
       "typeVersion": 1,
       "position": [
-        -580,
-        660
+        960,
+        580
       ],
       "notesInFlow": false,
       "credentials": {
         "postgres": {
-          "id": "eL0K9QhsNChjrYto",
-          "name": "Postgres account 2"
+          "id": "erIa9T64hNNeDuvB",
+          "name": "Prod Postgres account"
         }
       }
     },
     {
       "parameters": {
         "operation": "delete",
-        "tableId": "documents",
+        "tableId": "sensor_data",
         "filterType": "string",
         "filterString": "=metadata->>file_id=like.*{{ $json.file_id }}*"
       },
-      "id": "571ffe0d-d300-4044-913a-f68d01bf2042",
+      "id": "2a601eb3-3c62-403a-86af-5abe5f926b89",
       "name": "Delete Old Doc Rows",
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        -620,
-        1080
+        920,
+        1000
       ],
       "alwaysOutputData": true,
       "credentials": {
         "supabaseApi": {
-          "id": "DL49X3llf4q0tNtg",
-          "name": "Supabase account"
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
         }
       }
     },
@@ -156,13 +156,13 @@
           }
         }
       },
-      "id": "c387d632-e141-41bb-8b0c-6f146619f026",
+      "id": "669c8a5a-1adb-4fd2-acb1-bf57752dbc3e",
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        680,
-        200
+        2220,
+        120
       ]
     },
     {
@@ -170,49 +170,49 @@
         "public": true,
         "options": {}
       },
-      "id": "f8b6ba8d-bead-4b16-89e9-ccbe0f380166",
+      "id": "ec94b853-13aa-46cb-98a3-16143137911b",
       "name": "When chat message received",
       "type": "@n8n/n8n-nodes-langchain.chatTrigger",
       "typeVersion": 1.1,
       "position": [
-        -1540,
-        80
+        0,
+        0
       ],
       "webhookId": "15e4d662-3f98-48d0-9f50-68838769ecac"
     },
     {
       "parameters": {
         "httpMethod": "POST",
-        "path": "invoke-test-agent",
+        "path": "invoke-farming-agent",
         "authentication": "headerAuth",
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "bc108724-7511-467f-894e-1f537f6dc52b",
+      "id": "748f1c4f-013a-4e8f-861b-0c3daf754363",
       "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
-        -2040,
-        660
+        -500,
+        580
       ],
       "webhookId": "9ba11544-5c4e-4f91-818a-08a4ecb596c5",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "jnF0CRExSJQqMma7",
+          "id": "o5akNgXQQR74Sezh",
           "name": "Header Auth account"
         }
       }
     },
     {
       "parameters": {},
-      "id": "c22025ad-ef10-4591-b569-282ff196bed2",
+      "id": "19889570-fe7a-4e9f-b3bb-dbcaeb6be1b8",
       "name": "Character Text Splitter",
       "type": "@n8n/n8n-nodes-langchain.textSplitterCharacterTextSplitter",
       "typeVersion": 1,
       "position": [
-        860,
-        1560
+        2400,
+        1480
       ]
     },
     {
@@ -220,24 +220,24 @@
         "mode": "insert",
         "tableName": {
           "__rl": true,
-          "value": "documents",
+          "value": "sensor_data",
           "mode": "list",
-          "cachedResultName": "documents"
+          "cachedResultName": "sensor_data"
         },
         "options": {}
       },
-      "id": "6bf6b74a-90d9-4ce4-bf80-6a0e0a41fc70",
+      "id": "6dcb5536-89f1-4af0-acea-32434f3c54c0",
       "name": "Insert into Supabase Vectorstore",
       "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
       "typeVersion": 1,
       "position": [
-        180,
-        1080
+        1720,
+        1000
       ],
       "credentials": {
         "supabaseApi": {
-          "id": "DL49X3llf4q0tNtg",
-          "name": "Supabase account"
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
         }
       }
     },
@@ -249,20 +249,22 @@
           "mode": "list",
           "cachedResultName": "sensor_data"
         },
-        "options": {}
+        "options": {
+          "queryName": "match_sensor_data"
+        }
       },
-      "id": "0af34d28-4938-43fb-afa1-0b5e695e6a64",
+      "id": "a54f1830-8948-4ad0-a034-61217076b485",
       "name": "Supabase Vector Store",
       "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
       "typeVersion": 1,
       "position": [
-        400,
-        680
+        1940,
+        600
       ],
       "credentials": {
         "supabaseApi": {
-          "id": "DL49X3llf4q0tNtg",
-          "name": "Supabase account"
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
         }
       }
     },
@@ -274,14 +276,15 @@
       "type": "n8n-nodes-base.extractFromFile",
       "typeVersion": 1,
       "position": [
-        -80,
-        1080
+        1460,
+        1000
       ],
-      "id": "2d43839f-4f55-42f7-8faf-bb1d5a443570",
+      "id": "50e2dea0-ab4b-427d-9824-3b3c58488321",
       "name": "Extract from File"
     },
     {
       "parameters": {
+        "authentication": "serviceAccount",
         "operation": "download",
         "fileId": {
           "__rl": true,
@@ -296,19 +299,19 @@
           }
         }
       },
-      "id": "21ed735a-bdea-4514-9042-6fa607d1e901",
+      "id": "f920fe2d-393b-4e4b-ba6f-3fae9f6b49c5",
       "name": "Download Text",
       "type": "n8n-nodes-base.googleDrive",
       "typeVersion": 3,
       "position": [
-        -380,
-        1080
+        1160,
+        1000
       ],
       "executeOnce": true,
       "credentials": {
-        "googleDriveOAuth2Api": {
-          "id": "3FM4KfvfA9tvex2L",
-          "name": "Google Drive account"
+        "googleApi": {
+          "id": "NTTcnCqQgvFST9F0",
+          "name": "Farm Google Drive Account"
         }
       }
     },
@@ -344,13 +347,13 @@
         },
         "options": {}
       },
-      "id": "bf164962-f364-4831-af3c-b0e4e67f3e4c",
+      "id": "004fc62d-46f2-4a61-9c60-b8338429bf97",
       "name": "Prep Input Fields",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -1760,
-        500
+        -220,
+        420
       ]
     },
     {
@@ -364,7 +367,7 @@
             },
             {
               "fieldId": "message",
-              "fieldValue": "={{ $json.query }}"
+              "fieldValue": "={{ JSON.parse($json.query) }}"
             }
           ]
         }
@@ -372,15 +375,15 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        -1500,
-        440
+        40,
+        360
       ],
-      "id": "c9c343dd-b4cd-40e9-a932-244a7a9ad4e9",
+      "id": "da69e927-1274-40bf-8ba5-e659be70a0f0",
       "name": "Add User Message to DB",
       "credentials": {
         "supabaseApi": {
-          "id": "DL49X3llf4q0tNtg",
-          "name": "Supabase account"
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
         }
       }
     },
@@ -403,15 +406,15 @@
       "type": "n8n-nodes-base.supabase",
       "typeVersion": 1,
       "position": [
-        120,
-        200
+        1660,
+        120
       ],
-      "id": "21eff27f-beac-45b3-9d24-bea375fa4660",
+      "id": "d7c9db41-f62b-4a14-afec-db7200382126",
       "name": "Add AI Message to DB",
       "credentials": {
         "supabaseApi": {
-          "id": "DL49X3llf4q0tNtg",
-          "name": "Supabase account"
+          "id": "hOLIm3Jeg9JcG616",
+          "name": "Prod Supabase account"
         }
       }
     },
@@ -432,10 +435,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        400,
-        200
+        1940,
+        120
       ],
-      "id": "15bb974a-59ef-4855-a2cf-b60403f2e0ce",
+      "id": "765a5b1b-7a97-46fb-9df1-98ac9845b5ed",
       "name": "Prep Output Fields"
     },
     {
@@ -458,13 +461,13 @@
         },
         "options": {}
       },
-      "id": "e1598993-f919-4238-93b8-01594c2c66ab",
+      "id": "16b836d1-03fb-4d5e-b37b-159dbf027557",
       "name": "Set Doc ID",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -860,
-        1080
+        680,
+        1000
       ]
     },
     {
@@ -503,10 +506,10 @@
       "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
       "typeVersion": 2,
       "position": [
-        -300,
-        660
+        1240,
+        580
       ],
-      "id": "2476d699-ef67-4d12-a06a-b4ba675fefe3",
+      "id": "f907254f-5c7e-4da8-9e58-61dc96ccf073",
       "name": "Chart Greenhouse Data"
     },
     {
@@ -526,10 +529,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -280,
-        1340
+        1260,
+        1260
       ],
-      "id": "e66da6a1-d705-4d16-9cad-b53c83bd69e6",
+      "id": "360dadc7-7c66-4376-a8a0-dad73b7e699c",
       "name": "Query QuickChart"
     },
     {
@@ -561,10 +564,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -1280,
-        320
+        260,
+        240
       ],
-      "id": "3f2f55ed-db8a-48e5-9159-a1b81e37ee3c",
+      "id": "d6a6d27e-dc0f-46a4-bba4-8823f4b89be7",
       "name": "Settings"
     },
     {
@@ -580,15 +583,15 @@
       "type": "n8n-nodes-base.nocoDbTool",
       "typeVersion": 3,
       "position": [
-        -440,
-        660
+        1100,
+        580
       ],
-      "id": "d54304e6-526e-487c-a871-2f3b9b2c28e2",
+      "id": "b85f5c0d-fc72-459e-a88a-b6cbf813c918",
       "name": "NocoDB",
       "credentials": {
         "nocoDbApiToken": {
-          "id": "LIFbxKnIUOsYQ5bo",
-          "name": "NocoDB Token account"
+          "id": "XqXxvBU3A4gbHQNR",
+          "name": "Farming Token"
         }
       }
     },
@@ -609,10 +612,10 @@
       "type": "n8n-nodes-base.set",
       "typeVersion": 3.4,
       "position": [
-        -820,
-        320
+        720,
+        240
       ],
-      "id": "048cb43b-3f33-47ba-9071-0eaae1d3a684",
+      "id": "f354e19d-7949-4996-9543-66386955bee5",
       "name": "Extract Columns"
     },
     {
@@ -625,15 +628,15 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        -1060,
-        320
+        480,
+        240
       ],
-      "id": "a53e48d0-ab04-49b4-840d-2cc7d1057ef6",
+      "id": "02a00289-6283-4d3c-8030-99dcc46e3faa",
       "name": "Extract Table",
       "credentials": {
         "nocoDbApiToken": {
-          "id": "LIFbxKnIUOsYQ5bo",
-          "name": "NocoDB Token account"
+          "id": "XqXxvBU3A4gbHQNR",
+          "name": "Farming Token"
         }
       }
     },
@@ -645,10 +648,10 @@
       "type": "n8n-nodes-base.executeWorkflowTrigger",
       "typeVersion": 1.1,
       "position": [
-        -1100,
-        1340
+        440,
+        1260
       ],
-      "id": "e9aab955-5e2d-4128-993a-79823c8b06f0",
+      "id": "0c57f473-7b35-406f-bc65-825cfdb6524a",
       "name": "Execute 'Generate a chart' tool"
     },
     {
@@ -661,10 +664,10 @@
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.7,
       "position": [
-        -740,
-        1340
+        800,
+        1260
       ],
-      "id": "fc87fc40-0153-4db2-b416-308ff452fe9f",
+      "id": "17b64a0a-4ee9-460a-92f5-7d3ebe43a7ac",
       "name": "Charting Agent",
       "onError": "continueRegularOutput"
     },
@@ -676,13 +679,13 @@
           "systemMessage": "=You are a helpful and intelligent greenhouse data analysis agent that is skilled at answering questions about a live greenhouse table using the tools at your disposal. \n\nWhen answering user queries, provide direct and concise responses in full sentences rather than short lists. Keep your tone clear and natural, ensuring readability while maintaining brevity. Avoid unnecessary explanations or confirmations. Only include relevant details related to the user's request.\n\nWhen asked for calculations, return only the final result unless the user specifically requests details. For example, \"the average temperature in the Tropical Greenhouse is 21.14°C (70.05°F) based on 23 readings.\"\n\nYour goal is to help the user understand the greenhouse table at your disposal. Keep responses concise and only provide additional explanation if the user asks. Assume you already have all of the data and tools available to analyze.\n\nHere are the columns for that table.\n{{ $json.columns }}\n\nNote: the units for battery are in volts (V)\n\nThe greenhouses you support are:\n\nTropical Greenhouse: Simulating the highland tropical climate of the Kibara Plateau, DRC. This environment supports species such as the critically endangered Drosera Katangensis, which experiences seasonal dormancy during colder, drier conditions.\n\nCoastal Greenhouse: Designed to simulate coastal Mediterranean conditions, this greenhouse focuses on plants adapted to more temperate environments, with fluctuating humidity and milder temperature ranges.\n\nClearly indicate any limitations in data availability or scope."
         }
       },
-      "id": "dce24de6-89fc-4d08-a935-3ee8299283ce",
+      "id": "7746d35e-0e93-4f0a-bed8-b5e3e3b70120",
       "name": "RAG AI Farming Agent",
       "type": "@n8n/n8n-nodes-langchain.agent",
       "typeVersion": 1.6,
       "position": [
-        -460,
-        320
+        1080,
+        240
       ],
       "alwaysOutputData": false,
       "onError": "continueRegularOutput"
@@ -694,15 +697,15 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
       "typeVersion": 1.1,
       "position": [
-        -760,
-        1580
+        780,
+        1500
       ],
-      "id": "d33aa81d-3581-46bd-b64d-62d741522d98",
+      "id": "989f19ad-919b-418b-9f83-8a9b5e302d83",
       "name": "OpenAI Chat Model2",
       "credentials": {
         "openAiApi": {
-          "id": "VNjQcg0XPXM42sfX",
-          "name": "OpenAi account"
+          "id": "xAeHxzxTT16sMdwS",
+          "name": "Backup OpenAI Account"
         }
       }
     },
@@ -713,14 +716,14 @@
       "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
       "typeVersion": 1.2,
       "position": [
-        -720,
-        660
+        820,
+        580
       ],
-      "id": "39451745-6496-4a15-b247-a02f8fde58fe",
+      "id": "57cc6147-80db-4cf7-b3eb-9a1c3fed2fd2",
       "name": "Anthropic Chat Model",
       "credentials": {
         "anthropicApi": {
-          "id": "cSiSxFBheiXBCfe1",
+          "id": "AiDvkdxUFBeRQmnE",
           "name": "Anthropic account"
         }
       }
@@ -754,10 +757,10 @@
       "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
       "typeVersion": 1.1,
       "position": [
-        -140,
-        660
+        1400,
+        580
       ],
-      "id": "24832064-7e79-4ebf-bdd9-8e1b4a8126a0",
+      "id": "f65d64a4-901e-4cc3-8a79-878db540d08c",
       "name": "Set Alerts"
     },
     {
@@ -769,6 +772,7 @@
             }
           ]
         },
+        "authentication": "serviceAccount",
         "triggerOn": "specificFile",
         "fileToWatch": {
           "__rl": true,
@@ -781,15 +785,15 @@
       "type": "n8n-nodes-base.googleDriveTrigger",
       "typeVersion": 1,
       "position": [
-        -1100,
-        1080
+        440,
+        1000
       ],
-      "id": "a7a897f8-ec69-41bd-894e-5620a27bcb55",
+      "id": "5c76ad6e-ed3f-4cc0-89d9-37610fd074c1",
       "name": "Google Drive Trigger",
       "credentials": {
-        "googleDriveOAuth2Api": {
-          "id": "3FM4KfvfA9tvex2L",
-          "name": "Google Drive account"
+        "googleApi": {
+          "id": "NTTcnCqQgvFST9F0",
+          "name": "Farm Google Drive Account"
         }
       }
     },
@@ -802,10 +806,10 @@
       "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
       "typeVersion": 1.1,
       "position": [
-        20,
-        660
+        1560,
+        580
       ],
-      "id": "7655c0bb-a506-46aa-926d-1093bad1c1bc",
+      "id": "0f6f8333-aa1d-4461-b834-be11dee114e8",
       "name": "Get Greenhouse Image"
     },
     {
@@ -821,15 +825,15 @@
       "type": "n8n-nodes-base.nocoDbTool",
       "typeVersion": 3,
       "position": [
-        -620,
-        1560
+        920,
+        1480
       ],
-      "id": "46702819-5614-4c00-acb3-adce414c16aa",
+      "id": "ffa3286b-6f54-4fb2-be90-2e1853461e2a",
       "name": "NocoDB1",
       "credentials": {
         "nocoDbApiToken": {
-          "id": "LIFbxKnIUOsYQ5bo",
-          "name": "NocoDB Token account"
+          "id": "XqXxvBU3A4gbHQNR",
+          "name": "Farming Token"
         }
       }
     },
@@ -841,10 +845,10 @@
       "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
       "typeVersion": 1.2,
       "position": [
-        -500,
-        1560
+        1040,
+        1480
       ],
-      "id": "74144a11-5503-43f4-bc2b-45b0a657c934",
+      "id": "68cbb901-f1bd-45eb-bf8d-74915f76421d",
       "name": "Structured Output Parser"
     }
   ],
@@ -1248,17 +1252,17 @@
   "settings": {
     "executionOrder": "v1"
   },
-  "versionId": "9cc1e7d4-a59b-4dd3-8d17-427c00117b76",
+  "versionId": "8e0fbd58-b3ff-4c62-9041-dd4bae87dbfc",
   "meta": {
     "templateCredsSetupCompleted": true,
-    "instanceId": "2761e4be56c53f6a757b549b0e8a4e4485fee9ce29754b33bf246ac6eefacc94"
+    "instanceId": "f65a08c0adc90a3cde2c633d24c6daecde3817033b75588ee10a781b0b7aa3f5"
   },
-  "id": "RnkC4GPAGDISMCTs",
+  "id": "KzdWiRlX9PqcJOBh",
   "tags": [
     {
-      "createdAt": "2025-01-19T22:05:46.534Z",
-      "updatedAt": "2025-01-19T22:05:46.534Z",
-      "id": "EchpGe02PGRbpuWO",
+      "createdAt": "2024-12-10T13:21:06.912Z",
+      "updatedAt": "2024-12-10T13:21:06.912Z",
+      "id": "0tXJXfH2daB7QdK5",
       "name": "studio-test"
     }
   ]

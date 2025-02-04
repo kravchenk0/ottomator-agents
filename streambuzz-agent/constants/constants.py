@@ -177,7 +177,8 @@ OPEN_ROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
     This string defines the base URL used to make API requests to Open Router.
 """
-OPEN_ROUTER_MODEL_NAME = "google/gemini-2.0-flash-thinking-exp:free"
+# OPEN_ROUTER_MODEL_NAME = "google/gemini-2.0-flash-thinking-exp:free"
+OPEN_ROUTER_MODEL_NAME = "openai/gpt-4o-mini"
 """Name of the Open Router model.
 
     This string specifies the name of the model to be used from the Open Router API.
@@ -215,7 +216,8 @@ GEMINI_MODEL = GeminiModel(
 """
 
 # Model used in project
-PYDANTIC_AI_MODEL = GEMINI_MODEL
+# PYDANTIC_AI_MODEL = GEMINI_MODEL
+PYDANTIC_AI_MODEL = OPEN_ROUTER_MODEL
 """The Pydantic-AI model used in the project.
 
     This is the main model used for generating text responses.

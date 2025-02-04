@@ -1,0 +1,1265 @@
+{
+  "name": "RAG Farming Agent",
+  "nodes": [
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "a146c607-d4e2-4aec-aaf0-e768b511cbba",
+      "name": "OpenAI Chat Model1",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1,
+      "position": [
+        640,
+        540
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "VNjQcg0XPXM42sfX",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonMode": "expressionData",
+        "jsonData": "={{ $json.data || $json.text || $json.concatenated_data }}",
+        "options": {
+          "metadata": {
+            "metadataValues": [
+              {
+                "name": "=file_id",
+                "value": "={{ $('Download Text').item.json.metadata.file_id }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "90a31cc1-8b2e-4ccd-a961-b7685ec21852",
+      "name": "Default Data Loader",
+      "type": "@n8n/n8n-nodes-langchain.documentDefaultDataLoader",
+      "typeVersion": 1,
+      "position": [
+        600,
+        1320
+      ]
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {}
+      },
+      "id": "5c19117f-993d-4899-ba2a-0fe116b807be",
+      "name": "Embeddings OpenAI1",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1,
+      "position": [
+        380,
+        1380
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "VNjQcg0XPXM42sfX",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "name": "user_documents",
+        "description": "Contains all the user's documents that you can check for context to answer user questions."
+      },
+      "id": "c6767521-03de-4a7e-b870-718fc7e8c06b",
+      "name": "Retrieve Documents",
+      "type": "@n8n/n8n-nodes-langchain.toolVectorStore",
+      "typeVersion": 1,
+      "position": [
+        260,
+        440
+      ]
+    },
+    {
+      "parameters": {
+        "model": "text-embedding-3-small",
+        "options": {}
+      },
+      "id": "5a35f85e-97ee-48c0-9d76-fb07e5bb6fe0",
+      "name": "Embeddings OpenAI",
+      "type": "@n8n/n8n-nodes-langchain.embeddingsOpenAi",
+      "typeVersion": 1,
+      "position": [
+        440,
+        840
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "VNjQcg0XPXM42sfX",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Prep Input Fields').item.json.session_id }}"
+      },
+      "id": "9c4390fc-a1f2-4c63-b8b6-a4eff0f13f98",
+      "name": "Postgres Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1,
+      "position": [
+        -580,
+        660
+      ],
+      "notesInFlow": false,
+      "credentials": {
+        "postgres": {
+          "id": "eL0K9QhsNChjrYto",
+          "name": "Postgres account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "delete",
+        "tableId": "documents",
+        "filterType": "string",
+        "filterString": "=metadata->>file_id=like.*{{ $json.file_id }}*"
+      },
+      "id": "571ffe0d-d300-4044-913a-f68d01bf2042",
+      "name": "Delete Old Doc Rows",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -620,
+        1080
+      ],
+      "alwaysOutputData": true,
+      "credentials": {
+        "supabaseApi": {
+          "id": "DL49X3llf4q0tNtg",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "allIncomingItems",
+        "options": {
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "X-n8n-Signature",
+                "value": "EvtIS^EBVISeie6svB@6ev"
+              }
+            ]
+          }
+        }
+      },
+      "id": "c387d632-e141-41bb-8b0c-6f146619f026",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        680,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "public": true,
+        "options": {}
+      },
+      "id": "f8b6ba8d-bead-4b16-89e9-ccbe0f380166",
+      "name": "When chat message received",
+      "type": "@n8n/n8n-nodes-langchain.chatTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1540,
+        80
+      ],
+      "webhookId": "15e4d662-3f98-48d0-9f50-68838769ecac"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "invoke-test-agent",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "bc108724-7511-467f-894e-1f537f6dc52b",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -2040,
+        660
+      ],
+      "webhookId": "9ba11544-5c4e-4f91-818a-08a4ecb596c5",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "jnF0CRExSJQqMma7",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "c22025ad-ef10-4591-b569-282ff196bed2",
+      "name": "Character Text Splitter",
+      "type": "@n8n/n8n-nodes-langchain.textSplitterCharacterTextSplitter",
+      "typeVersion": 1,
+      "position": [
+        860,
+        1560
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "insert",
+        "tableName": {
+          "__rl": true,
+          "value": "documents",
+          "mode": "list",
+          "cachedResultName": "documents"
+        },
+        "options": {}
+      },
+      "id": "6bf6b74a-90d9-4ce4-bf80-6a0e0a41fc70",
+      "name": "Insert into Supabase Vectorstore",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1,
+      "position": [
+        180,
+        1080
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "DL49X3llf4q0tNtg",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableName": {
+          "__rl": true,
+          "value": "sensor_data",
+          "mode": "list",
+          "cachedResultName": "sensor_data"
+        },
+        "options": {}
+      },
+      "id": "0af34d28-4938-43fb-afa1-0b5e695e6a64",
+      "name": "Supabase Vector Store",
+      "type": "@n8n/n8n-nodes-langchain.vectorStoreSupabase",
+      "typeVersion": 1,
+      "position": [
+        400,
+        680
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "DL49X3llf4q0tNtg",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "text",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [
+        -80,
+        1080
+      ],
+      "id": "2d43839f-4f55-42f7-8faf-bb1d5a443570",
+      "name": "Extract from File"
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('Set Doc ID').item.json.file_id }}",
+          "mode": "id"
+        },
+        "options": {
+          "googleFileConversion": {
+            "conversion": {
+              "docsToFormat": "text/plain"
+            }
+          }
+        }
+      },
+      "id": "21ed735a-bdea-4514-9042-6fa607d1e901",
+      "name": "Download Text",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -380,
+        1080
+      ],
+      "executeOnce": true,
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "3FM4KfvfA9tvex2L",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9a9a245e-f1a1-4282-bb02-a81ffe629f0f",
+              "name": "query",
+              "value": "={{ {\n\"type\": \"human\",\n\"content\": $json.body.query,\n} }}",
+              "type": "string"
+            },
+            {
+              "id": "b80831d8-c653-4203-8706-adedfdb98f77",
+              "name": "user_id",
+              "value": "={{ $json.body.user_id }}",
+              "type": "string"
+            },
+            {
+              "id": "ea6f016e-2904-4701-8d8d-acabc83c705a",
+              "name": "request_id",
+              "value": "={{ $json.body.request_id }}",
+              "type": "string"
+            },
+            {
+              "id": "aca1a7d0-4b20-4b45-abb5-2c2d16c7e5f6",
+              "name": "session_id",
+              "value": "={{ $json.body.session_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "bf164962-f364-4831-af3c-b0e4e67f3e4c",
+      "name": "Prep Input Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1760,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "tableId": "messages",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "session_id",
+              "fieldValue": "={{ $json.session_id }}"
+            },
+            {
+              "fieldId": "message",
+              "fieldValue": "={{ $json.query }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        -1500,
+        440
+      ],
+      "id": "c9c343dd-b4cd-40e9-a932-244a7a9ad4e9",
+      "name": "Add User Message to DB",
+      "credentials": {
+        "supabaseApi": {
+          "id": "DL49X3llf4q0tNtg",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "tableId": "messages",
+        "fieldsUi": {
+          "fieldValues": [
+            {
+              "fieldId": "session_id",
+              "fieldValue": "={{ $('Prep Input Fields').item.json.session_id }}"
+            },
+            {
+              "fieldId": "message",
+              "fieldValue": "={{ {\n\"type\": \"ai\",\n\"content\": $json.output,\n\"data\": $json.data,\n\"additional_kwargs\": {},\n\"response_metadata\": {}\n} }}"
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        120,
+        200
+      ],
+      "id": "21eff27f-beac-45b3-9d24-bea375fa4660",
+      "name": "Add AI Message to DB",
+      "credentials": {
+        "supabaseApi": {
+          "id": "DL49X3llf4q0tNtg",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "b9b7b266-3a46-4f72-96b7-90fce238f280",
+              "name": "success",
+              "value": "=true",
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        400,
+        200
+      ],
+      "id": "15bb974a-59ef-4855-a2cf-b60403f2e0ce",
+      "name": "Prep Output Fields"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "10646eae-ae46-4327-a4dc-9987c2d76173",
+              "name": "file_id",
+              "value": "={{ $json.id }}",
+              "type": "string"
+            },
+            {
+              "id": "f4536df5-d0b1-4392-bf17-b8137fb31a44",
+              "name": "file_type",
+              "value": "={{ $json.mimeType }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e1598993-f919-4238-93b8-01594c2c66ab",
+      "name": "Set Doc ID",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -860,
+        1080
+      ]
+    },
+    {
+      "parameters": {
+        "name": "Generate_Chart",
+        "description": "Call this tool when necessary to create a chart or for visualizations of any manner. All string values must be properly escaped, especially for multi-line strings. When processing the output of the tool, URLs returned should always be in markdown format. For example, ![](url)",
+        "workflowId": {
+          "__rl": true,
+          "value": "={{ $workflow.id }}",
+          "mode": "id"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "chatInput": "={{ (JSON.parse($('Prep Input Fields').item.json.query)).content }}"
+          },
+          "matchingColumns": [
+            "description"
+          ],
+          "schema": [
+            {
+              "id": "chatInput",
+              "displayName": "chatInput",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "canBeUsedToMatch": true,
+              "type": "string",
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolWorkflow",
+      "typeVersion": 2,
+      "position": [
+        -300,
+        660
+      ],
+      "id": "2476d699-ef67-4d12-a06a-b4ba675fefe3",
+      "name": "Chart Greenhouse Data"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "8346101e-afeb-4093-8727-517d69ea140c",
+              "name": "response",
+              "value": "={{ \"https://quickchart.io/chart?width=400&c=\" + encodeURIComponent(JSON.stringify($json.output)) }}\n",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -280,
+        1340
+      ],
+      "id": "e66da6a1-d705-4d16-9cad-b53c83bd69e6",
+      "name": "Query QuickChart"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0a61ce99-17b5-45a9-b258-3f0291f11ba1",
+              "name": "chatInput",
+              "value": "={{ $json?.chatInput || $json.body.chatInput }}",
+              "type": "string"
+            },
+            {
+              "id": "db780496-3d7a-4049-9c0d-9fb99a9a87df",
+              "name": "sessionId",
+              "value": "={{ $json?.sessionId || $json.body.sessionId }}",
+              "type": "string"
+            },
+            {
+              "id": "8df34e4d-3300-4d59-b4ed-15d3ae536408",
+              "name": "table_id",
+              "value": "myqybv0dxnx2qt8",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -1280,
+        320
+      ],
+      "id": "3f2f55ed-db8a-48e5-9159-a1b81e37ee3c",
+      "name": "Settings"
+    },
+    {
+      "parameters": {
+        "authentication": "nocoDbApiToken",
+        "operation": "getAll",
+        "workspaceId": "w33yjbmy",
+        "projectId": "pa8jntwkscv3cqu",
+        "table": "={{ $('Settings').item.json.table_id }}",
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.nocoDbTool",
+      "typeVersion": 3,
+      "position": [
+        -440,
+        660
+      ],
+      "id": "d54304e6-526e-487c-a871-2f3b9b2c28e2",
+      "name": "NocoDB",
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "LIFbxKnIUOsYQ5bo",
+          "name": "NocoDB Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0f09fcf1-60ff-467a-9b1f-0fd0ed2c28ab",
+              "name": "columns",
+              "value": "={{ $json.columns.map(item => item.title).toJsonString() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -820,
+        320
+      ],
+      "id": "048cb43b-3f33-47ba-9071-0eaae1d3a684",
+      "name": "Extract Columns"
+    },
+    {
+      "parameters": {
+        "url": "=https://app.nocodb.com/api/v2/meta/tables/{{ $json.table_id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "nocoDbApiToken",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1060,
+        320
+      ],
+      "id": "a53e48d0-ab04-49b4-840d-2cc7d1057ef6",
+      "name": "Extract Table",
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "LIFbxKnIUOsYQ5bo",
+          "name": "NocoDB Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "inputSource": "jsonExample",
+        "jsonExample": "{\n  \"chatInput\": \"a string\"\n}"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        -1100,
+        1340
+      ],
+      "id": "e9aab955-5e2d-4128-993a-79823c8b06f0",
+      "name": "Execute 'Generate a chart' tool"
+    },
+    {
+      "parameters": {
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "You are a Chart.js visualization agent tasked with generating accurate, well-labeled, and valid Chart.js configuration objects based on user requests. Your output should be immediately usable within a Chart.js environment to create insightful visualizations.\n\n1. Data Source:\nAlways use the NocoDB tool to retrieve real, live data from the relevant greenhouse tables in the NocoDB database. The data will be from the environmental sensors in the Coastal Greenhouse and Tropical Greenhouse. The required data points include:\n\nhumidity (%)\ntemp (°C)\npressure (hPa)\nbattery (V)\ntimestamp (CST) (format: YYYY-MM-DD HH:mm:ss)\nThe data should always be fetched from the database, and the requested chart must reflect this real-time data.\n\n2. Data Processing:\n\nRetrieve the data from the NocoDB API by querying the appropriate table(s) and columns.\nEnsure the data is sorted by timestamp (CST) in ascending order to ensure chronological accuracy.\nProcess the data into the appropriate format (for example, transforming timestamps into labels and sensor readings into datasets).\n3. Data Validation:\n\nEnsure that the fetched data has timestamps within the requested range.\nIf any labels or data are missing or inconsistent, prompt for clarification.\n4. Chart Generation:\nWhen the chart is requested, fetch data from NocoDB and then generate the chart configuration object based on the following parameters:\n\nChart Type (Line, Bar, Pie, etc.)\nAxis Titles (e.g., Timestamp (CST), Humidity (%))\nDatasets (use the real data for sensor readings)\nStyling Options (such as colors, gridlines, and tooltips)\nResponsive Design (ensure the chart is responsive and well-scaled for various devices)\nExample Request:\n\"Create a line chart showing humidity trends in the Coastal Greenhouse for the past week. Use the timestamp (CST) for the x-axis and humidity (%) for the y-axis. Title the chart 'Weekly Humidity Trends – Coastal Greenhouse' and make it visually engaging with smooth lines.\"\n\nExpected Chart Configuration (JSON):\n{\n  \"type\": \"line\",\n  \"data\": {\n    \"labels\": [\"2025-01-21 00:00:00\", \"2025-01-22 00:00:00\", \"2025-01-23 00:00:00\", \"2025-01-24 00:00:00\", \"2025-01-25 00:00:00\"],\n    \"datasets\": [\n      {\n        \"label\": \"Humidity (%)\",\n        \"data\": [60.5, 62.3, 58.9, 63.1, 61.7],\n        \"borderColor\": \"rgb(75, 192, 192)\",\n        \"backgroundColor\": \"rgba(75, 192, 192, 0.2)\",\n        \"tension\": 0.4,\n        \"fill\": true\n      }\n    ]\n  },\n  \"options\": {\n    \"responsive\": true,\n    \"plugins\": {\n      \"title\": {\n        \"display\": true,\n        \"text\": \"Weekly Humidity Trends – Coastal Greenhouse\"\n      }\n    },\n    \"scales\": {\n      \"x\": {\n        \"type\": \"time\",\n        \"time\": {\n          \"unit\": \"day\",\n          \"tooltipFormat\": \"YYYY-MM-DD HH:mm:ss\"\n        },\n        \"title\": {\n          \"display\": true,\n          \"text\": \"Timestamp (CST)\"\n        }\n      },\n      \"y\": {\n        \"title\": {\n          \"display\": true,\n          \"text\": \"Humidity (%)\"\n        },\n        \"beginAtZero\": true\n      }\n    }\n  }\n}\n"
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        -740,
+        1340
+      ],
+      "id": "fc87fc40-0153-4db2-b416-308ff452fe9f",
+      "name": "Charting Agent",
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $('Prep Input Fields').item.json.query }}",
+        "options": {
+          "systemMessage": "=You are a helpful and intelligent greenhouse data analysis agent that is skilled at answering questions about a live greenhouse table using the tools at your disposal. \n\nWhen answering user queries, provide direct and concise responses in full sentences rather than short lists. Keep your tone clear and natural, ensuring readability while maintaining brevity. Avoid unnecessary explanations or confirmations. Only include relevant details related to the user's request.\n\nWhen asked for calculations, return only the final result unless the user specifically requests details. For example, \"the average temperature in the Tropical Greenhouse is 21.14°C (70.05°F) based on 23 readings.\"\n\nYour goal is to help the user understand the greenhouse table at your disposal. Keep responses concise and only provide additional explanation if the user asks. Assume you already have all of the data and tools available to analyze.\n\nHere are the columns for that table.\n{{ $json.columns }}\n\nNote: the units for battery are in volts (V)\n\nThe greenhouses you support are:\n\nTropical Greenhouse: Simulating the highland tropical climate of the Kibara Plateau, DRC. This environment supports species such as the critically endangered Drosera Katangensis, which experiences seasonal dormancy during colder, drier conditions.\n\nCoastal Greenhouse: Designed to simulate coastal Mediterranean conditions, this greenhouse focuses on plants adapted to more temperate environments, with fluctuating humidity and milder temperature ranges.\n\nClearly indicate any limitations in data availability or scope."
+        }
+      },
+      "id": "dce24de6-89fc-4d08-a935-3ee8299283ce",
+      "name": "RAG AI Farming Agent",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.6,
+      "position": [
+        -460,
+        320
+      ],
+      "alwaysOutputData": false,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.1,
+      "position": [
+        -760,
+        1580
+      ],
+      "id": "d33aa81d-3581-46bd-b64d-62d741522d98",
+      "name": "OpenAI Chat Model2",
+      "credentials": {
+        "openAiApi": {
+          "id": "VNjQcg0XPXM42sfX",
+          "name": "OpenAi account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatAnthropic",
+      "typeVersion": 1.2,
+      "position": [
+        -720,
+        660
+      ],
+      "id": "39451745-6496-4a15-b247-a02f8fde58fe",
+      "name": "Anthropic Chat Model",
+      "credentials": {
+        "anthropicApi": {
+          "id": "cSiSxFBheiXBCfe1",
+          "name": "Anthropic account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "This HTTP request updates the threshold values for a specific greenhouse (Coastal Greenhouse or Tropical Greenhouse) for a specific metric (either humidity or temperature). The request is triggered when a user wants to set or update the threshold values for a greenhouse. The request requires the greenhouse name, the metric (humidity or temperature), and the threshold values (low and/or high) to be specified. \n\nIf the user provides the temperature in Fahrenheit (F), make sure to convert it to Celsius (C) using this formula: 1.8*((temperature in fahrenheit) - 32) before sending it to the POST endpoint.\n\nRequired Parameters:\nname (string): The name of the greenhouse (e.g., \"Tropical Greenhouse\" or \"Coastal Greenhouse\").\nmetric (string): The type of metric to update. Valid values are:\n\"humidity\": Refers to the humidity level in the greenhouse.\n\"temperature\": Refers to the temperature level in the greenhouse.\nlow (optional, integer): The lower threshold value. Should be defined if high is specified.\nhigh (optional, integer): The higher threshold value. Should be defined if low is specified.\nLogic:\nAt least one of low or high must be defined.\nIf both low and high are provided, low must be strictly less than high.\nResponse Handling:\nIf the response contains a \"message\" with \"Thresholds updated successfully\", the agent should notify the user that the update was successful and provide the discord link.\n\nIf the response contains an \"error\", the agent should relay the error message to the user, explaining what went wrong (e.g., invalid greenhouse name, missing parameters, or invalid threshold values).\nExample success response:\n{\n  \"message\": \"Thresholds updated successfully\",\n  \"data\": {\n    \"name\": \"Tropical Greenhouse\",\n    \"metric\": \"humidity\",\n    \"low\": 20,\n    \"high\": 30,\n    \"discord\": \"https://discord.gg/wVcxdFPf28\"\n  }\n}\n\n\nThe agent should respond to the user: \"The thresholds for Tropical Greenhouse have been updated successfully. Metric: humidity, Low: 20%, High: 30%.\" To check out the event updates, visit the discord integration here: https://discord.gg/wVcxdFPf28\nExample error response:\n{\n  \"error\": \"At least one of 'low' or 'high' must be defined\"\n}\n\n\nThe agent should respond to the user: \"Error: At least one of 'low' or 'high' must be defined.\"\n",
+        "method": "POST",
+        "url": "https://canopyserver.alurellc.com/discord/update_threshold",
+        "sendBody": true,
+        "parametersBody": {
+          "values": [
+            {
+              "name": "name"
+            },
+            {
+              "name": "low",
+              "valueProvider": "modelOptional"
+            },
+            {
+              "name": "high",
+              "valueProvider": "modelOptional"
+            },
+            {
+              "name": "metric"
+            }
+          ]
+        },
+        "optimizeResponse": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        -140,
+        660
+      ],
+      "id": "24832064-7e79-4ebf-bdd9-8e1b4a8126a0",
+      "name": "Set Alerts"
+    },
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "triggerOn": "specificFile",
+        "fileToWatch": {
+          "__rl": true,
+          "value": "188bjeoQsruiv54pRbcU-TZ6jGdcYB_9TgWJNWyaV3gc",
+          "mode": "list",
+          "cachedResultName": "Greenhouse Documentation",
+          "cachedResultUrl": "https://docs.google.com/document/d/188bjeoQsruiv54pRbcU-TZ6jGdcYB_9TgWJNWyaV3gc/edit?usp=drivesdk"
+        }
+      },
+      "type": "n8n-nodes-base.googleDriveTrigger",
+      "typeVersion": 1,
+      "position": [
+        -1100,
+        1080
+      ],
+      "id": "a7a897f8-ec69-41bd-894e-5620a27bcb55",
+      "name": "Google Drive Trigger",
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "3FM4KfvfA9tvex2L",
+          "name": "Google Drive account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "toolDescription": "Gets the most recent image of a top view snapshot from the coastal greenhouse. Trigger this tool whenever the user asks about the current image or view in the coastal greenhouse. If they ask about the tropical greenhouse view, kindly explain that there isn't a mini-camera hooked up in that greenhouse yet.\n\nThe tool makes a GET request to https://canopyserver.alurellc.com/get_image and returns an image_url and timestamp in the response, similar to:\n\n{\n    \"image_url\": \"/images/camera_image_latest.jpg\",\n    \"timestamp\": \"20250128_065508\"\n}\nAfter receiving the response:\n\nDecode the timestamp and return it in a user-friendly format (e.g., \"January 28, 2025, 06:55:08 AM CST\"). The timestamps are in CST, so be sure to specify that. \n\nFormat the image_url as a full URL (https://canopyserver.alurellc.com{image_url}).\nReturn the image URL in markdown format like ![](https://canopyserver.alurellc.com/images/camera_image_latest.jpg) to allow users to view the image.\n\nIf there's an error or the timestamp can't be decoded, respond with a user-friendly explanation.\n\nExample Output in Markdown: \nAfter making the call, the tool would return something like this to the user:\n\nTimestamp: January 28, 2025, 06:55:08 AM (specify CST)\nImage: ![](https://canopyserver.alurellc.com/images/camera_image_latest.jpg)\nThis approach ensures the image can be presented cleanly in markdown format while decoding the timestamp for user clarity.",
+        "url": "https://canopyserver.alurellc.com/get_image",
+        "optimizeResponse": true
+      },
+      "type": "@n8n/n8n-nodes-langchain.toolHttpRequest",
+      "typeVersion": 1.1,
+      "position": [
+        20,
+        660
+      ],
+      "id": "7655c0bb-a506-46aa-926d-1093bad1c1bc",
+      "name": "Get Greenhouse Image"
+    },
+    {
+      "parameters": {
+        "authentication": "nocoDbApiToken",
+        "operation": "getAll",
+        "workspaceId": "w33yjbmy",
+        "projectId": "pa8jntwkscv3cqu",
+        "table": "myqybv0dxnx2qt8",
+        "returnAll": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.nocoDbTool",
+      "typeVersion": 3,
+      "position": [
+        -620,
+        1560
+      ],
+      "id": "46702819-5614-4c00-acb3-adce414c16aa",
+      "name": "NocoDB1",
+      "credentials": {
+        "nocoDbApiToken": {
+          "id": "LIFbxKnIUOsYQ5bo",
+          "name": "NocoDB Token account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n  \"properties\": {\n    \"options\": {\n      \"type\": \"object\",\n      \"properties\": {\n        \"responsive\": {\n          \"type\": \"boolean\"\n        },\n        \"maintainAspectRatio\": {\n          \"type\": \"boolean\"\n        },\n        \"scales\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"x\": {\n              \"type\": \"object\",\n              \"properties\": {\n                \"display\": {\n                  \"type\": \"boolean\"\n                },\n                \"title\": {\n                  \"type\": \"object\",\n                  \"properties\": {\n                    \"display\": {\n                      \"type\": \"boolean\"\n                    },\n                    \"text\": {\n                      \"type\": \"string\"\n                    }\n                  }\n                }\n              }\n            },\n            \"y\": {\n              \"type\": \"object\",\n              \"properties\": {\n                \"display\": {\n                  \"type\": \"boolean\"\n                },\n                \"title\": {\n                  \"type\": \"object\",\n                  \"properties\": {\n                    \"display\": {\n                      \"type\": \"boolean\"\n                    },\n                    \"text\": {\n                      \"type\": \"string\"\n                    }\n                  }\n                }\n              }\n            }\n          }\n        },\n        \"plugins\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"legend\": {\n              \"type\": \"object\",\n              \"properties\": {\n                \"display\": {\n                  \"type\": \"boolean\"\n                },\n                \"position\": {\n                  \"type\": \"string\",\n                  \"enum\": [\"top\", \"left\", \"bottom\", \"right\"]\n                }\n              }\n            },\n            \"tooltip\": {\n              \"type\": \"object\",\n              \"properties\": {\n                \"enabled\": {\n                  \"type\": \"boolean\"\n                }\n              }\n            }\n          }\n        },\n        \"animation\": {\n          \"type\": \"object\",\n          \"properties\": {\n            \"duration\": {\n              \"type\": \"number\"\n            },\n            \"easing\": {\n              \"type\": \"string\",\n              \"enum\": [\"linear\", \"easeInOutQuad\", \"easeInQuad\", \"easeOutQuad\", \"easeInOutCubic\", \"easeInCubic\", \"easeOutCubic\"]\n            }\n          }\n        }\n      }\n    }\n  }\n}\n"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.2,
+      "position": [
+        -500,
+        1560
+      ],
+      "id": "74144a11-5503-43f4-bc2b-45b0a657c934",
+      "name": "Structured Output Parser"
+    }
+  ],
+  "pinData": {
+    "Webhook": [
+      {
+        "json": {
+          "headers": {
+            "host": "n8n.[your n8n url].com",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "content-length": "192",
+            "accept": "*/*",
+            "accept-encoding": "deflate, gzip",
+            "authorization": "Bearer YOUR BEARER TOKEN",
+            "content-type": "application/json",
+            "x-forwarded-for": "64.227.21.251",
+            "x-forwarded-host": "n8n.[your n8n url].com",
+            "x-forwarded-proto": "https",
+            "x-real-ip": "2601:441:4380:40b0:b4b3:724b:27e1:c4ba"
+          },
+          "params": {},
+          "query": {},
+          "body": {
+            "query": "Supabase",
+            "user_id": "google-oauth2|116467443974012389959",
+            "request_id": "f98asdyf987yasd0f987asdf8",
+            "session_id": "google-oauth2|116467443974012389959~2~8dfbddbe603d"
+          },
+          "webhookUrl": "https://n8n.[your n8n url].com/webhook-test/invoke-agent",
+          "executionMode": "test"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Retrieve Documents",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retrieve Documents": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAG AI Farming Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Supabase Vector Store",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Embeddings OpenAI1": {
+      "ai_embedding": [
+        [
+          {
+            "node": "Insert into Supabase Vectorstore",
+            "type": "ai_embedding",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Default Data Loader": {
+      "ai_document": [
+        [
+          {
+            "node": "Insert into Supabase Vectorstore",
+            "type": "ai_document",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "RAG AI Farming Agent",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Old Doc Rows": {
+      "main": [
+        [
+          {
+            "node": "Download Text",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When chat message received": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prep Input Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Character Text Splitter": {
+      "ai_textSplitter": [
+        [
+          {
+            "node": "Default Data Loader",
+            "type": "ai_textSplitter",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Supabase Vector Store": {
+      "ai_vectorStore": [
+        [
+          {
+            "node": "Retrieve Documents",
+            "type": "ai_vectorStore",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract from File": {
+      "main": [
+        [
+          {
+            "node": "Insert into Supabase Vectorstore",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Text": {
+      "main": [
+        [
+          {
+            "node": "Extract from File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Input Fields": {
+      "main": [
+        [
+          {
+            "node": "Add User Message to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add AI Message to DB": {
+      "main": [
+        [
+          {
+            "node": "Prep Output Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prep Output Fields": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Doc ID": {
+      "main": [
+        [
+          {
+            "node": "Delete Old Doc Rows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Chart Greenhouse Data": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAG AI Farming Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Settings": {
+      "main": [
+        [
+          {
+            "node": "Extract Table",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NocoDB": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAG AI Farming Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Columns": {
+      "main": [
+        [
+          {
+            "node": "RAG AI Farming Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Table": {
+      "main": [
+        [
+          {
+            "node": "Extract Columns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute 'Generate a chart' tool": {
+      "main": [
+        [
+          {
+            "node": "Charting Agent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Charting Agent": {
+      "main": [
+        [
+          {
+            "node": "Query QuickChart",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RAG AI Farming Agent": {
+      "main": [
+        [
+          {
+            "node": "Add AI Message to DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model2": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Charting Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Anthropic Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "RAG AI Farming Agent",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Alerts": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAG AI Farming Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Drive Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Doc ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Greenhouse Image": {
+      "ai_tool": [
+        [
+          {
+            "node": "RAG AI Farming Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NocoDB1": {
+      "ai_tool": [
+        [
+          {
+            "node": "Charting Agent",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add User Message to DB": {
+      "main": [
+        [
+          {
+            "node": "Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Charting Agent",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "9cc1e7d4-a59b-4dd3-8d17-427c00117b76",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "2761e4be56c53f6a757b549b0e8a4e4485fee9ce29754b33bf246ac6eefacc94"
+  },
+  "id": "RnkC4GPAGDISMCTs",
+  "tags": [
+    {
+      "createdAt": "2025-01-19T22:05:46.534Z",
+      "updatedAt": "2025-01-19T22:05:46.534Z",
+      "id": "EchpGe02PGRbpuWO",
+      "name": "studio-test"
+    }
+  ]
+}

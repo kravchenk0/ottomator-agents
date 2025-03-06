@@ -34,12 +34,23 @@ The `studio-integration-version` folder contains the code used to integrate this
 
 ## Setup Instructions
 
-1. **Install dependencies**:
+1. **Create and activate a virtual environment**:
+   ```bash
+   # On Windows
+   python -m venv venv
+   venv\Scripts\activate
+
+   # On macOS/Linux
+   python -m venv venv
+   source venv/bin/activate
+   ```
+
+2. **Install dependencies**:
    ```bash
    pip install -r requirements.txt
    ```
 
-2. **Set up environment variables**:
+3. **Set up environment variables**:
    Copy the `.env.example` file to `.env` and fill in your API keys:
    - `OPENAI_API_KEY`: Your OpenAI API key
    - `MODEL_CHOICE`: The OpenAI model to use (defaults to gpt-4o-mini)
@@ -47,7 +58,7 @@ The `studio-integration-version` folder contains the code used to integrate this
    - `SUPABASE_URL`: Your Supabase project URL
    - `SUPABASE_KEY`: Your Supabase service role key
 
-3. **Run the application**:
+4. **Run the application**:
    ```bash
    streamlit run iterations/v3-streamlit-supabase-mem0.py
    ```

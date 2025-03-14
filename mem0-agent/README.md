@@ -68,7 +68,6 @@ The `studio-integration-version` folder contains the code used to integrate this
 1. Create a Supabase account and project at [supabase.com](https://supabase.com)
 2. Get your Database URL from: Project Settings > Database
 3. Get your API keys from: Project Settings > API
-4. Enable Email Auth in: Authentication > Providers > Email
 
 ## How It Works
 

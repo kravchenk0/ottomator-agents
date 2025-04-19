@@ -33,7 +33,7 @@ async def crawl_sequential(urls: List[str]):
             if result.success:
                 print(f"Successfully crawled: {url}")
                 # E.g. check markdown length
-                print(f"Markdown length: {len(result.markdown_v2.raw_markdown)}")
+                print(f"Markdown length: {len(result.markdown.raw_markdown)}")
             else:
                 print(f"Failed: {url} - Error: {result.error_message}")
     finally:

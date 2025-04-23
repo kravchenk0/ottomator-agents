@@ -5,10 +5,14 @@ from openai import OpenAI
 from mem0 import Memory
 import supabase
 from supabase.client import Client, ClientOptions
+from pathlib import Path
 import uuid
+import sys
 
 # Load environment variables
-load_dotenv()
+project_root = Path(__file__).resolve().parent.parent
+dotenv_path = project_root / '.env'
+load_dotenv(dotenv_path, override=True)
 
 # Initialize Supabase client
 supabase_url = os.environ.get("SUPABASE_URL", "")

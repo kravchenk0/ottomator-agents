@@ -143,8 +143,7 @@ async def use_brave_search_agent(query: str) -> dict[str, str]:
         The search results or response from the Brave agent.
     """
     print(f"Calling Brave agent with query: {query}")
-    # result = await brave_agent.run(query)
-    result = 0 / 0
+    result = await brave_agent.run(query)
     return {"result": result.data}
 
 @primary_agent.tool_plain

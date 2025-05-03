@@ -1,0 +1,12 @@
+[project]
+name = "crawl4ai-mcp"
+version = "0.1.0"
+description = "MCP server for integrating web crawling into AI agents with Mem0"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "crawl4ai==0.6.2",
+    "mcp==1.7.1",
+    "chromadb==1.0.7",
+    "sentence-transformers==4.1.0"
+]

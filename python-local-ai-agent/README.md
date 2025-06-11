@@ -32,7 +32,7 @@ Choose this Python version if you prefer a standalone service or need more progr
 
 ```bash
 git clone https://github.com/coleam00/ottomator-agents.git
-cd python-local-ai-agent
+cd ottomator-agents/python-local-ai-agent
 ```
 
 ### 2. Set up virtual environment

@@ -116,7 +116,7 @@ async def web_search(ctx: RunContext[AgentDeps], query: str) -> str:
         results = []
         
         # Get top 3 results
-        for i, result in enumerate(data.get('results', [])[:3], 1):
+        for i, result in enumerate(data.get('results', [])[:1], 1):
             # Fetch the actual content from each URL
             try:
                 page_response = await ctx.deps.http_client.get(

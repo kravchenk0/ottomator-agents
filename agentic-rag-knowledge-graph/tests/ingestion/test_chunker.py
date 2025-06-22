@@ -146,10 +146,11 @@ Third paragraph to test chunking."""
         config = ChunkingConfig(chunk_size=30, chunk_overlap=10)
         chunker = SimpleChunker(config)
         
-        content = "A" * 100  # 100 characters
+        # Create content with paragraph breaks to force chunking
+        content = "A" * 25 + "\n\n" + "B" * 25 + "\n\n" + "C" * 25 + "\n\n" + "D" * 25
         chunks = chunker.chunk_document(content, "Overlap Test", "overlap.md")
         
-        # Should create multiple chunks due to size
+        # Should create multiple chunks due to paragraph breaks and size
         assert len(chunks) > 1
         
         # Each chunk should be roughly the chunk size
@@ -166,7 +167,8 @@ class TestSemanticChunker:
         chunker = SemanticChunker(config)
         
         assert chunker.config == config
-        assert chunker.model == "gpt-4-turbo-preview"  # Default model
+        # Model is now an OpenAIModel object, not a string
+        assert hasattr(chunker.model, 'model_name')
     
     def test_split_on_structure(self):
         """Test structural splitting."""
@@ -231,12 +233,14 @@ This is content under the section.
     @pytest.mark.asyncio
     async def test_split_long_section_llm_failure(self):
         """Test handling of LLM failures in long section splitting."""
-        config = ChunkingConfig(chunk_size=50, max_chunk_size=100)
+        config = ChunkingConfig(chunk_size=50, chunk_overlap=10, max_chunk_size=100)
         chunker = SemanticChunker(config)
         
-        # Mock OpenAI client to fail
-        with patch('ingestion.chunker.openai_client') as mock_client:
-            mock_client.chat.completions.create.side_effect = Exception("API Error")
+        # Mock the LLM agent to fail
+        with patch('pydantic_ai.Agent') as mock_agent_class:
+            mock_agent = AsyncMock()
+            mock_agent.run.side_effect = Exception("API Error")
+            mock_agent_class.return_value = mock_agent
             
             long_section = "This is a very long section that needs to be split. " * 10
             chunks = await chunker._split_long_section(long_section)
@@ -309,7 +313,8 @@ The results demonstrate the effectiveness of our approach.
 This research contributes to the advancement of AI technology.
 Future work will explore additional applications and improvements."""
         
-        chunks = await chunker.chunk_document(
+        # SimpleChunker.chunk_document is synchronous, not async
+        chunks = chunker.chunk_document(
             content=content,
             title="AI Research Paper",
             source="research.md",

@@ -20,7 +20,7 @@ from agent.db_utils import (
     vector_search,
     hybrid_search,
     get_document_chunks,
-    test_connection
+    test_connection as db_test_connection
 )
 
 
@@ -76,10 +76,17 @@ class TestDatabasePool:
         """Test connection acquisition."""
         pool = DatabasePool("postgresql://test")
         
-        mock_pool = AsyncMock()
         mock_connection = Mock()
-        mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_connection)
-        mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+        
+        # Create a mock that directly returns a context manager
+        class MockContextManager:
+            async def __aenter__(self):
+                return mock_connection
+            async def __aexit__(self, exc_type, exc_val, exc_tb):
+                return None
+        
+        mock_pool = Mock()
+        mock_pool.acquire = Mock(return_value=MockContextManager())
         
         pool.pool = mock_pool
         
@@ -128,15 +135,17 @@ class TestSessionManagement:
                 "expires_at": datetime.now(timezone.utc) + timedelta(hours=1)
             }
             mock_conn.fetchrow.return_value = mock_result
-            mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-            mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+            mock_context_manager = AsyncMock()
+            mock_context_manager.__aenter__ = AsyncMock(return_value=mock_conn)
+            mock_context_manager.__aexit__ = AsyncMock(return_value=None)
+            mock_pool.acquire.return_value = mock_context_manager
             
             session = await get_session("session-123")
             
             assert session is not None
             assert session["id"] == "session-123"
             assert session["user_id"] == "user-123"
-            assert json.loads(session["metadata"]) == {"client": "web"}
+            assert session["metadata"] == {"client": "web"}
     
     @pytest.mark.asyncio
     async def test_get_session_not_found(self):
@@ -245,15 +254,17 @@ class TestDocumentManagement:
                 "updated_at": datetime.now(timezone.utc)
             }
             mock_conn.fetchrow.return_value = mock_result
-            mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
-            mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
+            mock_context_manager = AsyncMock()
+            mock_context_manager.__aenter__ = AsyncMock(return_value=mock_conn)
+            mock_context_manager.__aexit__ = AsyncMock(return_value=None)
+            mock_pool.acquire.return_value = mock_context_manager
             
             document = await get_document("doc-123")
             
             assert document is not None
             assert document["id"] == "doc-123"
             assert document["title"] == "Test Document"
-            assert json.loads(document["metadata"]) == {"author": "test"}
+            assert document["metadata"] == {"author": "test"}
     
     @pytest.mark.asyncio
     async def test_list_documents(self):
@@ -403,7 +414,7 @@ class TestUtilityFunctions:
             mock_pool.acquire.return_value.__aenter__ = AsyncMock(return_value=mock_conn)
             mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
             
-            result = await test_connection()
+            result = await db_test_connection()
             
             assert result is True
             mock_conn.fetchval.assert_called_once_with("SELECT 1")
@@ -414,6 +425,6 @@ class TestUtilityFunctions:
         with patch('agent.db_utils.db_pool') as mock_pool:
             mock_pool.acquire.side_effect = Exception("Connection failed")
             
-            result = await test_connection()
+            result = await db_test_connection()
             
             assert result is False

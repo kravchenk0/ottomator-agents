@@ -407,8 +407,9 @@ class SimpleChunker:
                         base_metadata.copy()
                     ))
                     
-                    # Move position with overlap
-                    current_pos += len(current_chunk) - self.config.chunk_overlap
+                    # Move position, but ensure overlap is respected
+                    overlap_start = max(0, len(current_chunk) - self.config.chunk_overlap)
+                    current_pos += overlap_start
                     chunk_index += 1
                 
                 # Start new chunk with current paragraph
@@ -449,7 +450,7 @@ class SimpleChunker:
 
 
 # Factory function
-def create_chunker(config: ChunkingConfig) -> SemanticChunker:
+def create_chunker(config: ChunkingConfig):
     """
     Create appropriate chunker based on configuration.
     

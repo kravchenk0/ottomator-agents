@@ -56,7 +56,7 @@ A comprehensive AI agent system that combines traditional RAG (Retrieval Augment
 - Python 3.11 or higher
 - PostgreSQL 15+ with pgvector extension
 - Neo4j 5.0+ database
-- OpenAI API key
+- OpenAI/Gemini API key or Ollama
 
 ### System Dependencies
 

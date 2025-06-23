@@ -62,7 +62,6 @@ class VectorSearchInput(BaseModel):
     """Input for vector search tool."""
     query: str = Field(..., description="Search query")
     limit: int = Field(default=10, description="Maximum number of results")
-    similarity_threshold: float = Field(default=0.7, description="Minimum similarity score")
 
 
 class GraphSearchInput(BaseModel):
@@ -122,8 +121,7 @@ async def vector_search_tool(input_data: VectorSearchInput) -> List[ChunkResult]
         # Perform vector search
         results = await vector_search(
             embedding=embedding,
-            limit=input_data.limit,
-            similarity_threshold=input_data.similarity_threshold
+            limit=input_data.limit
         )
         
         print(results)

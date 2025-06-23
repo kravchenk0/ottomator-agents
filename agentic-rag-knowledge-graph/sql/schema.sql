@@ -73,11 +73,10 @@ CREATE TABLE messages (
 -- Create index for message queries
 CREATE INDEX idx_messages_session_id ON messages (session_id, created_at);
 
--- Function for vector similarity search
+-- Function for vector similarity search (no threshold - returns best matches)
 CREATE OR REPLACE FUNCTION match_chunks(
     query_embedding vector(1536),
-    match_count INT DEFAULT 10,
-    similarity_threshold FLOAT DEFAULT 0.7
+    match_count INT DEFAULT 10
 )
 RETURNS TABLE (
     chunk_id UUID,
@@ -103,18 +102,16 @@ BEGIN
     FROM chunks c
     JOIN documents d ON c.document_id = d.id
     WHERE c.embedding IS NOT NULL
-    AND 1 - (c.embedding <=> query_embedding) > similarity_threshold
     ORDER BY c.embedding <=> query_embedding
     LIMIT match_count;
 END;
 $$;
 
--- Function for hybrid search (vector + keyword)
+-- Function for hybrid search (vector + keyword, no threshold - returns best matches)
 CREATE OR REPLACE FUNCTION hybrid_search(
     query_embedding vector(1536),
     query_text TEXT,
     match_count INT DEFAULT 10,
-    similarity_threshold FLOAT DEFAULT 0.7,
     text_weight FLOAT DEFAULT 0.3
 )
 RETURNS TABLE (
@@ -144,27 +141,32 @@ BEGIN
         FROM chunks c
         JOIN documents d ON c.document_id = d.id
         WHERE c.embedding IS NOT NULL
-        AND 1 - (c.embedding <=> query_embedding) > similarity_threshold
     ),
     text_results AS (
         SELECT 
             c.id AS chunk_id,
-            similarity(c.content, query_text) AS text_sim
+            c.document_id,
+            c.content,
+            ts_rank_cd(to_tsvector('english', c.content), plainto_tsquery('english', query_text)) AS text_sim,
+            c.metadata,
+            d.title AS doc_title,
+            d.source AS doc_source
         FROM chunks c
-        WHERE similarity(c.content, query_text) > 0.1
+        JOIN documents d ON c.document_id = d.id
+        WHERE to_tsvector('english', c.content) @@ plainto_tsquery('english', query_text)
     )
     SELECT 
-        vr.chunk_id,
-        vr.document_id,
-        vr.content,
-        (vr.vector_sim * (1 - text_weight) + COALESCE(tr.text_sim, 0) * text_weight) AS combined_score,
-        vr.vector_sim AS vector_similarity,
-        COALESCE(tr.text_sim, 0) AS text_similarity,
-        vr.metadata,
-        vr.doc_title AS document_title,
-        vr.doc_source AS document_source
-    FROM vector_results vr
-    LEFT JOIN text_results tr ON vr.chunk_id = tr.chunk_id
+        COALESCE(v.chunk_id, t.chunk_id) AS chunk_id,
+        COALESCE(v.document_id, t.document_id) AS document_id,
+        COALESCE(v.content, t.content) AS content,
+        (COALESCE(v.vector_sim, 0) * (1 - text_weight) + COALESCE(t.text_sim, 0) * text_weight) AS combined_score,
+        COALESCE(v.vector_sim, 0) AS vector_similarity,
+        COALESCE(t.text_sim, 0) AS text_similarity,
+        COALESCE(v.metadata, t.metadata) AS metadata,
+        COALESCE(v.doc_title, t.doc_title) AS document_title,
+        COALESCE(v.doc_source, t.doc_source) AS document_source
+    FROM vector_results v
+    FULL OUTER JOIN text_results t ON v.chunk_id = t.chunk_id
     ORDER BY combined_score DESC
     LIMIT match_count;
 END;

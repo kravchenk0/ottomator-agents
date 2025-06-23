@@ -64,28 +64,25 @@ rag_agent = Agent(
 async def vector_search(
     ctx: RunContext[AgentDependencies],
     query: str,
-    limit: int = 10,
-    similarity_threshold: float = 0.7
+    limit: int = 10
 ) -> List[Dict[str, Any]]:
     """
     Search for relevant information using semantic similarity.
     
     This tool performs vector similarity search across document chunks
-    to find semantically related content. Best for finding similar content,
-    detailed explanations, and comprehensive information.
+    to find semantically related content. Returns the most relevant results
+    regardless of similarity score.
     
     Args:
         query: Search query to find similar content
         limit: Maximum number of results to return (1-50)
-        similarity_threshold: Minimum similarity score (0.0-1.0)
     
     Returns:
-        List of matching chunks with similarity scores and metadata
+        List of matching chunks ordered by similarity (best first)
     """
     input_data = VectorSearchInput(
         query=query,
-        limit=limit,
-        similarity_threshold=similarity_threshold
+        limit=limit
     )
     
     results = await vector_search_tool(input_data)

@@ -12,6 +12,10 @@ import asyncio
 
 from graphiti_core import Graphiti
 from graphiti_core.utils.maintenance.graph_data_operations import clear_data
+from graphiti_core.llm_client.config import LLMConfig
+from graphiti_core.llm_client.openai_client import OpenAIClient
+from graphiti_core.embedder.openai import OpenAIEmbedder, OpenAIEmbedderConfig
+from graphiti_core.cross_encoder.openai_reranker_client import OpenAIRerankerClient
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -19,7 +23,7 @@ load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-
+# Help from this PR for setting up the custom clients: https://github.com/getzep/graphiti/pull/601/files
 class GraphitiClient:
     """Manages Graphiti knowledge graph operations."""
     
@@ -37,12 +41,30 @@ class GraphitiClient:
             neo4j_user: Neo4j username
             neo4j_password: Neo4j password
         """
+        # Neo4j configuration
         self.neo4j_uri = neo4j_uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
         self.neo4j_user = neo4j_user or os.getenv("NEO4J_USER", "neo4j")
         self.neo4j_password = neo4j_password or os.getenv("NEO4J_PASSWORD")
         
         if not self.neo4j_password:
             raise ValueError("NEO4J_PASSWORD environment variable not set")
+        
+        # LLM configuration
+        self.llm_base_url = os.getenv("LLM_BASE_URL", "https://api.openai.com/v1")
+        self.llm_api_key = os.getenv("LLM_API_KEY")
+        self.llm_choice = os.getenv("LLM_CHOICE", "gpt-4.1-mini")
+        
+        if not self.llm_api_key:
+            raise ValueError("LLM_API_KEY environment variable not set")
+        
+        # Embedding configuration
+        self.embedding_base_url = os.getenv("EMBEDDING_BASE_URL", "https://api.openai.com/v1")
+        self.embedding_api_key = os.getenv("EMBEDDING_API_KEY")
+        self.embedding_model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
+        self.embedding_dimensions = int(os.getenv("VECTOR_DIMENSION", "1536"))
+        
+        if not self.embedding_api_key:
+            raise ValueError("EMBEDDING_API_KEY environment variable not set")
         
         self.graphiti: Optional[Graphiti] = None
         self._initialized = False
@@ -53,14 +75,42 @@ class GraphitiClient:
             return
         
         try:
-            # Initialize Graphiti (it handles Neo4j driver internally)
-            self.graphiti = Graphiti(self.neo4j_uri, self.neo4j_user, self.neo4j_password)
+            # Create LLMConfig
+            llm_config = LLMConfig(
+                api_key=self.llm_api_key,
+                model=self.llm_choice,
+                small_model=self.llm_choice,  # Can be the same as main model
+                base_url=self.llm_base_url
+            )
+            
+            # Create OpenAI LLM client
+            llm_client = OpenAIClient(config=llm_config)
+            
+            # Create OpenAI embedder
+            embedder = OpenAIEmbedder(
+                config=OpenAIEmbedderConfig(
+                    api_key=self.embedding_api_key,
+                    embedding_model=self.embedding_model,
+                    embedding_dim=self.embedding_dimensions,
+                    base_url=self.embedding_base_url
+                )
+            )
+            
+            # Initialize Graphiti with custom clients
+            self.graphiti = Graphiti(
+                self.neo4j_uri,
+                self.neo4j_user,
+                self.neo4j_password,
+                llm_client=llm_client,
+                embedder=embedder,
+                cross_encoder=OpenAIRerankerClient(client=llm_client, config=llm_config)
+            )
             
             # Build indices and constraints
             await self.graphiti.build_indices_and_constraints()
             
             self._initialized = True
-            logger.info("Graphiti client initialized successfully")
+            logger.info(f"Graphiti client initialized successfully with LLM: {self.llm_choice} and embedder: {self.embedding_model}")
             
         except Exception as e:
             logger.error(f"Failed to initialize Graphiti: {e}")
@@ -271,7 +321,33 @@ class GraphitiClient:
             if self.graphiti:
                 await self.graphiti.close()
             
-            self.graphiti = Graphiti(self.neo4j_uri, self.neo4j_user, self.neo4j_password)
+            # Create OpenAI-compatible clients for reinitialization
+            llm_config = LLMConfig(
+                api_key=self.llm_api_key,
+                model=self.llm_choice,
+                small_model=self.llm_choice,
+                base_url=self.llm_base_url
+            )
+            
+            llm_client = OpenAIClient(config=llm_config)
+            
+            embedder = OpenAIEmbedder(
+                config=OpenAIEmbedderConfig(
+                    api_key=self.embedding_api_key,
+                    embedding_model=self.embedding_model,
+                    embedding_dim=self.embedding_dimensions,
+                    base_url=self.embedding_base_url
+                )
+            )
+            
+            self.graphiti = Graphiti(
+                self.neo4j_uri,
+                self.neo4j_user,
+                self.neo4j_password,
+                llm_client=llm_client,
+                embedder=embedder,
+                cross_encoder=OpenAIRerankerClient(client=llm_client, config=llm_config)
+            )
             await self.graphiti.build_indices_and_constraints()
             
             logger.warning("Reinitialized Graphiti client (fresh indices created)")

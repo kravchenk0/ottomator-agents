@@ -100,11 +100,19 @@ class SearchResponse(BaseModel):
     query_time_ms: float
 
 
+class ToolCall(BaseModel):
+    """Tool call information model."""
+    tool_name: str
+    args: Dict[str, Any] = Field(default_factory=dict)
+    tool_call_id: Optional[str] = None
+
+
 class ChatResponse(BaseModel):
     """Chat response model."""
     message: str
     session_id: str
     sources: List[DocumentMetadata] = Field(default_factory=list)
+    tools_used: List[ToolCall] = Field(default_factory=list)
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 
@@ -180,12 +188,6 @@ class AgentDependencies(BaseModel):
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
 
-class ToolCall(BaseModel):
-    """Tool call information."""
-    tool_name: str
-    arguments: Dict[str, Any]
-    result: Optional[Any] = None
-    error: Optional[str] = None
 
 
 class AgentContext(BaseModel):

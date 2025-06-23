@@ -36,7 +36,8 @@ from .models import (
     SearchResponse,
     StreamDelta,
     ErrorResponse,
-    HealthStatus
+    HealthStatus,
+    ToolCall
 )
 from .tools import (
     vector_search_tool,
@@ -65,6 +66,10 @@ logging.basicConfig(
     level=getattr(logging, LOG_LEVEL.upper()),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
+
+# Set debug level for our module during development
+if APP_ENV == "development":
+    logger.setLevel(logging.DEBUG)
 
 
 @asynccontextmanager
@@ -170,6 +175,81 @@ async def get_conversation_context(
     ]
 
 
+def extract_tool_calls(result) -> List[ToolCall]:
+    """
+    Extract tool calls from Pydantic AI result.
+    
+    Args:
+        result: Pydantic AI result object
+    
+    Returns:
+        List of ToolCall objects
+    """
+    tools_used = []
+    
+    try:
+        # Get all messages from the result
+        messages = result.all_messages()
+        
+        for message in messages:
+            if hasattr(message, 'parts'):
+                for part in message.parts:
+                    # Check if this is a tool call part
+                    if part.__class__.__name__ == 'ToolCallPart':
+                        try:
+                            # Debug logging to understand structure
+                            logger.debug(f"ToolCallPart attributes: {dir(part)}")
+                            logger.debug(f"ToolCallPart content: tool_name={getattr(part, 'tool_name', None)}")
+                            
+                            # Extract tool information safely
+                            tool_name = str(part.tool_name) if hasattr(part, 'tool_name') else 'unknown'
+                            
+                            # Get args - the args field is a JSON string in Pydantic AI
+                            tool_args = {}
+                            if hasattr(part, 'args') and part.args is not None:
+                                if isinstance(part.args, str):
+                                    # Args is a JSON string, parse it
+                                    try:
+                                        import json
+                                        tool_args = json.loads(part.args)
+                                        logger.debug(f"Parsed args from JSON string: {tool_args}")
+                                    except json.JSONDecodeError as e:
+                                        logger.debug(f"Failed to parse args JSON: {e}")
+                                        tool_args = {}
+                                elif isinstance(part.args, dict):
+                                    tool_args = part.args
+                                    logger.debug(f"Args already a dict: {tool_args}")
+                            
+                            # Alternative: use args_as_dict method if available
+                            if hasattr(part, 'args_as_dict'):
+                                try:
+                                    tool_args = part.args_as_dict()
+                                    logger.debug(f"Got args from args_as_dict(): {tool_args}")
+                                except:
+                                    pass
+                            
+                            # Get tool call ID
+                            tool_call_id = None
+                            if hasattr(part, 'tool_call_id'):
+                                tool_call_id = str(part.tool_call_id) if part.tool_call_id else None
+                            
+                            # Create ToolCall with explicit field mapping
+                            tool_call_data = {
+                                "tool_name": tool_name,
+                                "args": tool_args,
+                                "tool_call_id": tool_call_id
+                            }
+                            logger.debug(f"Creating ToolCall with data: {tool_call_data}")
+                            tools_used.append(ToolCall(**tool_call_data))
+                        except Exception as e:
+                            logger.debug(f"Failed to parse tool call part: {e}")
+                            continue
+    except Exception as e:
+        logger.warning(f"Failed to extract tool calls: {e}")
+    
+    return tools_used
+
+
 async def save_conversation_turn(
     session_id: str,
     user_message: str,
@@ -207,7 +287,7 @@ async def execute_agent(
     session_id: str,
     user_id: Optional[str] = None,
     save_conversation: bool = True
-) -> str:
+) -> tuple[str, List[ToolCall]]:
     """
     Execute the agent with a message.
     
@@ -218,7 +298,7 @@ async def execute_agent(
         save_conversation: Whether to save the conversation
     
     Returns:
-        Agent response
+        Tuple of (agent response, tools used)
     """
     try:
         # Create dependencies
@@ -243,6 +323,7 @@ async def execute_agent(
         result = await rag_agent.run(full_prompt, deps=deps)
         
         response = result.data
+        tools_used = extract_tool_calls(result)
         
         # Save conversation if requested
         if save_conversation:
@@ -252,11 +333,11 @@ async def execute_agent(
                 assistant_message=response,
                 metadata={
                     "user_id": user_id,
-                    "tool_calls": len(result.tool_calls()) if hasattr(result, 'tool_calls') else 0
+                    "tool_calls": len(tools_used)
                 }
             )
         
-        return response
+        return response, tools_used
         
     except Exception as e:
         logger.error(f"Agent execution failed: {e}")
@@ -270,7 +351,7 @@ async def execute_agent(
                 metadata={"error": str(e)}
             )
         
-        return error_response
+        return error_response, []
 
 
 # API Endpoints
@@ -312,7 +393,7 @@ async def chat(request: ChatRequest):
         session_id = await get_or_create_session(request)
         
         # Execute agent
-        response = await execute_agent(
+        response, tools_used = await execute_agent(
             message=request.message,
             session_id=session_id,
             user_id=request.user_id
@@ -321,6 +402,7 @@ async def chat(request: ChatRequest):
         return ChatResponse(
             message=response,
             session_id=session_id,
+            tools_used=tools_used,
             metadata={"search_type": str(request.search_type)}
         )
         
@@ -388,12 +470,31 @@ async def chat_stream(request: ChatRequest):
                                         yield f"data: {json.dumps({'type': 'text', 'content': delta_content})}\n\n"
                                         full_response += delta_content
                 
+                # Extract tools used from the final result
+                result = run.result
+                tools_used = extract_tool_calls(result)
+                
+                # Send tools used information
+                if tools_used:
+                    tools_data = [
+                        {
+                            "tool_name": tool.tool_name,
+                            "args": tool.args,
+                            "tool_call_id": tool.tool_call_id
+                        }
+                        for tool in tools_used
+                    ]
+                    yield f"data: {json.dumps({'type': 'tools', 'tools': tools_data})}\n\n"
+                
                 # Save assistant response
                 await add_message(
                     session_id=session_id,
                     role="assistant",
                     content=full_response,
-                    metadata={"streamed": True}
+                    metadata={
+                        "streamed": True,
+                        "tool_calls": len(tools_used)
+                    }
                 )
                 
                 yield f"data: {json.dumps({'type': 'end'})}\n\n"

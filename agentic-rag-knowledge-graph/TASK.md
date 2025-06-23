@@ -242,6 +242,43 @@ This document tracks all tasks for building the agentic RAG system with knowledg
 - [x] Implement proper embedding provider flexibility (OpenAI/Ollama)
 - [x] Test and iterate until all tests pass using proper mocking
 
+### Graphiti Integration Fixes
+- [x] Fix Graphiti implementation with proper initialization and lifecycle management
+- [x] Remove all limit parameters from Graphiti operations per user requirements
+- [x] Fix PostgreSQL embedding storage format (JSON string format)
+- [x] Remove similarity thresholds entirely from vector search
+- [x] Fix ChunkResult UUID to string conversion
+- [x] Optimize Graphiti to avoid token limit errors (content truncation)
+- [x] Configure Graphiti with OpenAI-compatible clients (OpenAIClient, OpenAIEmbedder)
+- [x] Fix duplicate ToolCall model definition in models.py
+
+---
+
+## Phase 7: CLI and Agent Transparency
+
+### Command Line Interface
+- [x] Create interactive CLI for agent interaction
+- [x] Implement real-time streaming display
+- [x] Add tool usage visibility to show agent reasoning
+- [x] Create session management in CLI
+- [x] Add color-coded output for better readability
+- [x] Implement CLI commands (help, health, clear, exit)
+- [x] Configure default port to 8058
+
+### API Tool Tracking
+- [x] Add ToolCall model for tracking tool usage
+- [x] Implement extract_tool_calls function
+- [x] Update ChatResponse to include tools_used field
+- [x] Add tool usage to streaming responses
+- [x] Fix tool call extraction from Pydantic AI messages
+
+### Documentation Updates
+- [x] Add CLI usage section to README
+- [x] Document agent behavior configuration via prompts.py
+- [x] Update model examples to latest versions (gpt-4.1-mini, etc.)
+- [x] Update all port references to 8058
+- [x] Add note about configuring agent tool selection behavior
+
 ---
 
 ## Project Status
@@ -251,5 +288,7 @@ This document tracks all tasks for building the agentic RAG system with knowledg
 ✅ **Production ready**
 ✅ **Comprehensive documentation**
 ✅ **Flexible provider system implemented**
+✅ **CLI with agent transparency features**
+✅ **Graphiti integration with OpenAI-compatible clients**
 
 The agentic RAG with knowledge graph system is complete and ready for production use.

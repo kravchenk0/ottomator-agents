@@ -74,7 +74,7 @@ NEO4J_PASSWORD=your_password
 LLM_PROVIDER=openai
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_API_KEY=sk-your-api-key
-LLM_CHOICE=gpt-4-turbo-preview
+LLM_CHOICE=gpt-4.1-mini
 
 # Embedding Configuration
 EMBEDDING_PROVIDER=openai
@@ -83,11 +83,12 @@ EMBEDDING_API_KEY=sk-your-api-key
 EMBEDDING_MODEL=text-embedding-3-small
 
 # Ingestion Configuration
-INGESTION_LLM_CHOICE=gpt-4o-mini  # Faster model for processing
+INGESTION_LLM_CHOICE=gpt-4.1-nano  # Faster model for processing
 
 # Application Configuration
 APP_ENV=development
 LOG_LEVEL=INFO
+APP_PORT=8058
 ```
 
 For other LLM providers:
@@ -96,19 +97,19 @@ For other LLM providers:
 LLM_PROVIDER=ollama
 LLM_BASE_URL=http://localhost:11434/v1
 LLM_API_KEY=ollama
-LLM_CHOICE=llama3.1:8b
+LLM_CHOICE=qwen2.5:14b-instruct
 
 # OpenRouter
 LLM_PROVIDER=openrouter
 LLM_BASE_URL=https://openrouter.ai/api/v1
 LLM_API_KEY=your-openrouter-key
-LLM_CHOICE=anthropic/claude-3.5-sonnet
+LLM_CHOICE=anthropic/claude-3-5-sonnet
 
 # Gemini
 LLM_PROVIDER=gemini
 LLM_BASE_URL=https://generativelanguage.googleapis.com/v1beta
 LLM_API_KEY=your-gemini-key
-LLM_CHOICE=gemini-1.5-pro
+LLM_CHOICE=gemini-2.5-flash
 ```
 
 ## Quick Start
@@ -147,7 +148,14 @@ The ingestion process will:
 
 NOTE that this can take a while because knowledge graphs are very computationally expensive!
 
-### 3. Start the API Server (Terminal 1)
+### 3. Configure Agent Behavior (Optional)
+
+Before running the API server, you can customize when the agent uses different tools by modifying the system prompt in `agent/prompts.py`. The system prompt controls:
+- When to use vector search vs knowledge graph search
+- How to combine results from different sources
+- The agent's reasoning strategy for tool selection
+
+### 4. Start the API Server (Terminal 1)
 
 ```bash
 # Start the FastAPI server
@@ -156,7 +164,7 @@ python -m agent.api
 # Server will be available at http://localhost:8058
 ```
 
-### 4. Use the Command Line Interface (Terminal 2)
+### 5. Use the Command Line Interface (Terminal 2)
 
 The CLI provides an interactive way to chat with the agent and see which tools it uses for each query.
 
@@ -216,7 +224,7 @@ Microsoft has a significant strategic partnership with OpenAI...
 - `clear` - Clear current session
 - `exit` or `quit` - Exit the CLI
 
-### 5. Test the System
+### 6. Test the System
 
 #### Health Check
 ```bash

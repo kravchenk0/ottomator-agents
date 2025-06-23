@@ -36,11 +36,12 @@ This project builds an AI agent system that combines traditional RAG (Retrieval 
 ### 1. Agent System (`/agent`)
 - **agent.py**: Main Pydantic AI agent with system prompts and configuration
 - **tools.py**: All agent tools for RAG and knowledge graph operations
-- **prompts.py**: System prompts and tool descriptions
-- **api.py**: FastAPI endpoints with streaming support
+- **prompts.py**: System prompts controlling agent tool selection behavior
+- **api.py**: FastAPI endpoints with streaming support and tool usage extraction
 - **db_utils.py**: PostgreSQL database utilities and connection management
-- **graph_utils.py**: Neo4j/Graphiti utilities for knowledge graph operations
-- **models.py**: Pydantic models for data validation
+- **graph_utils.py**: Neo4j/Graphiti utilities with OpenAI-compatible client configuration
+- **models.py**: Pydantic models for data validation including ToolCall tracking
+- **providers.py**: Flexible LLM provider abstraction supporting multiple backends
 
 ### 2. Ingestion System (`/ingestion`)
 - **ingest.py**: Main ingestion script to process markdown files
@@ -57,6 +58,12 @@ This project builds an AI agent system that combines traditional RAG (Retrieval 
 - Comprehensive unit and integration tests
 - Mocked external dependencies
 - Test fixtures and utilities
+
+### 5. CLI Interface (`/cli.py`)
+- Interactive command-line interface for the agent
+- Real-time streaming with Server-Sent Events
+- Tool usage visibility showing agent reasoning
+- Session management and conversation context
 
 ## Technical Stack
 
@@ -129,6 +136,13 @@ This project builds an AI agent system that combines traditional RAG (Retrieval 
 - Environment-based provider switching
 - Separate models for different tasks (chat vs ingestion)
 - OpenAI-compatible API interface
+- Graphiti with custom OpenAI-compatible clients (OpenAIClient, OpenAIEmbedder)
+
+### 6. Agent Transparency
+- Tool usage tracking and display in API responses
+- CLI with real-time tool visibility
+- Configurable agent behavior via system prompt
+- Clear reasoning process exposure
 
 ## Implementation Strategy
 
@@ -176,14 +190,15 @@ NEO4J_PASSWORD=password
 LLM_PROVIDER=openai  # openai, ollama, openrouter, gemini
 LLM_BASE_URL=https://api.openai.com/v1
 LLM_API_KEY=sk-...
-LLM_CHOICE=gpt-4-turbo-preview
+LLM_CHOICE=gpt-4.1-mini
 EMBEDDING_PROVIDER=openai
 EMBEDDING_MODEL=text-embedding-3-small
-INGESTION_LLM_CHOICE=gpt-4o-mini
+INGESTION_LLM_CHOICE=gpt-4.1-nano
 
 # Application
 APP_ENV=development
 LOG_LEVEL=INFO
+APP_PORT=8058
 ```
 
 ### Database Schema

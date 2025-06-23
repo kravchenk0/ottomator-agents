@@ -358,6 +358,11 @@ class DocumentIngestionPipeline:
                 
                 # Insert chunks
                 for chunk in chunks:
+                    # Convert embedding list to string format for PostgreSQL vector type
+                    embedding_str = None
+                    if hasattr(chunk, 'embedding') and chunk.embedding:
+                        embedding_str = str(chunk.embedding)
+                    
                     await conn.execute(
                         """
                         INSERT INTO chunks (document_id, content, embedding, chunk_index, metadata, token_count)
@@ -365,7 +370,7 @@ class DocumentIngestionPipeline:
                         """,
                         document_id,
                         chunk.content,
-                        chunk.embedding if hasattr(chunk, 'embedding') else None,
+                        embedding_str,
                         chunk.index,
                         json.dumps(chunk.metadata),
                         chunk.token_count

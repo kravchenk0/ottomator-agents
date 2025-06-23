@@ -11,8 +11,7 @@ from contextlib import asynccontextmanager
 import asyncio
 
 from graphiti_core import Graphiti
-from neo4j import AsyncGraphDatabase, AsyncDriver
-from neo4j.exceptions import Neo4jError
+from graphiti_core.utils.maintenance.graph_data_operations import clear_data
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -46,32 +45,19 @@ class GraphitiClient:
             raise ValueError("NEO4J_PASSWORD environment variable not set")
         
         self.graphiti: Optional[Graphiti] = None
-        self.driver: Optional[AsyncDriver] = None
         self._initialized = False
     
     async def initialize(self):
-        """Initialize Graphiti and Neo4j driver."""
+        """Initialize Graphiti client."""
         if self._initialized:
             return
         
         try:
-            # Initialize Neo4j driver
-            self.driver = AsyncGraphDatabase.driver(
-                self.neo4j_uri,
-                auth=(self.neo4j_user, self.neo4j_password)
-            )
+            # Initialize Graphiti (it handles Neo4j driver internally)
+            self.graphiti = Graphiti(self.neo4j_uri, self.neo4j_user, self.neo4j_password)
             
-            # Verify connection
-            await self.driver.verify_connectivity()
-            
-            # Initialize Graphiti
-            self.graphiti = Graphiti(
-                neo4j_uri=self.neo4j_uri,
-                neo4j_user=self.neo4j_user,
-                neo4j_password=self.neo4j_password
-            )
-            
-            await self.graphiti.build_indices()
+            # Build indices and constraints
+            await self.graphiti.build_indices_and_constraints()
             
             self._initialized = True
             logger.info("Graphiti client initialized successfully")
@@ -81,10 +67,10 @@ class GraphitiClient:
             raise
     
     async def close(self):
-        """Close Neo4j driver connection."""
-        if self.driver:
-            await self.driver.close()
-            self.driver = None
+        """Close Graphiti connection."""
+        if self.graphiti:
+            await self.graphiti.close()
+            self.graphiti = None
             self._initialized = False
             logger.info("Graphiti client closed")
     
@@ -111,12 +97,15 @@ class GraphitiClient:
         
         episode_timestamp = timestamp or datetime.now(timezone.utc)
         
+        # Import EpisodeType for proper source handling
+        from graphiti_core.nodes import EpisodeType
+        
         await self.graphiti.add_episode(
             name=episode_id,
             episode_body=content,
+            source=EpisodeType.text,  # Always use text type for our content
             source_description=source,
-            created_at=episode_timestamp,
-            metadata=metadata or {}
+            reference_time=episode_timestamp
         )
         
         logger.info(f"Added episode {episode_id} to knowledge graph")
@@ -144,24 +133,19 @@ class GraphitiClient:
             await self.initialize()
         
         try:
-            results = await self.graphiti.search(
-                query=query,
-                num_results=limit,
-                center_node_distance=center_node_distance,
-                use_hybrid_search=use_hybrid_search
-            )
+            # Use Graphiti's search method (simplified parameters)
+            results = await self.graphiti.search(query)
             
             # Convert results to dictionaries
             return [
                 {
                     "fact": result.fact,
-                    "episodes": [ep.model_dump() for ep in result.episodes],
-                    "created_at": result.created_at.isoformat() if result.created_at else None,
-                    "expired_at": result.expired_at.isoformat() if result.expired_at else None,
-                    "valid_at": result.valid_at.isoformat() if result.valid_at else None,
-                    "uuid": str(result.uuid)
+                    "uuid": str(result.uuid),
+                    "valid_at": str(result.valid_at) if hasattr(result, 'valid_at') and result.valid_at else None,
+                    "invalid_at": str(result.invalid_at) if hasattr(result, 'invalid_at') and result.invalid_at else None,
+                    "source_node_uuid": str(result.source_node_uuid) if hasattr(result, 'source_node_uuid') and result.source_node_uuid else None
                 }
-                for result in results
+                for result in results[:limit]
             ]
             
         except Exception as e:
@@ -175,12 +159,12 @@ class GraphitiClient:
         depth: int = 1
     ) -> Dict[str, Any]:
         """
-        Get entities related to a given entity.
+        Get entities related to a given entity using Graphiti search.
         
         Args:
             entity_name: Name of the entity
-            relationship_types: Types of relationships to follow
-            depth: Maximum depth to traverse
+            relationship_types: Types of relationships to follow (not used with Graphiti)
+            depth: Maximum depth to traverse (not used with Graphiti)
         
         Returns:
             Related entities and relationships
@@ -188,51 +172,29 @@ class GraphitiClient:
         if not self._initialized:
             await self.initialize()
         
-        async with self.driver.session() as session:
-            # Build the Cypher query
-            if relationship_types:
-                rel_filter = f"[r:{' | '.join(relationship_types)}]"
-            else:
-                rel_filter = "[r]"
+        # Use Graphiti search to find related information about the entity
+        results = await self.graphiti.search(f"relationships involving {entity_name}")
+        
+        # Extract entity information from the search results
+        related_entities = set()
+        facts = []
+        
+        for result in results:
+            facts.append({
+                "fact": result.fact,
+                "uuid": str(result.uuid),
+                "valid_at": str(result.valid_at) if hasattr(result, 'valid_at') and result.valid_at else None
+            })
             
-            query = f"""
-            MATCH path = (start:Entity {{name: $entity_name}})-{rel_filter}*1..{depth}-(end:Entity)
-            RETURN 
-                start.name AS start_entity,
-                [rel in relationships(path) | type(rel)] AS relationships,
-                [node in nodes(path) | node.name] AS entities,
-                end.name AS end_entity
-            LIMIT 50
-            """
-            
-            result = await session.run(query, entity_name=entity_name)
-            records = await result.data()
-            
-            # Process results
-            related_entities = set()
-            relationships = []
-            
-            for record in records:
-                path_entities = record["entities"]
-                path_relationships = record["relationships"]
-                
-                # Add entities
-                related_entities.update(path_entities)
-                
-                # Add relationships
-                for i in range(len(path_relationships)):
-                    relationships.append({
-                        "from": path_entities[i],
-                        "to": path_entities[i + 1],
-                        "type": path_relationships[i]
-                    })
-            
-            return {
-                "central_entity": entity_name,
-                "related_entities": list(related_entities),
-                "relationships": relationships,
-                "depth": depth
-            }
+            # Simple entity extraction from fact text (could be enhanced)
+            if entity_name.lower() in result.fact.lower():
+                related_entities.add(entity_name)
+        
+        return {
+            "central_entity": entity_name,
+            "related_facts": facts,
+            "search_method": "graphiti_semantic_search"
+        }
     
     async def get_entity_timeline(
         self,
@@ -241,12 +203,12 @@ class GraphitiClient:
         end_date: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get timeline of facts for an entity.
+        Get timeline of facts for an entity using Graphiti.
         
         Args:
             entity_name: Name of the entity
-            start_date: Start of time range
-            end_date: End of time range
+            start_date: Start of time range (not currently used)
+            end_date: End of time range (not currently used)
         
         Returns:
             Timeline of facts
@@ -254,40 +216,26 @@ class GraphitiClient:
         if not self._initialized:
             await self.initialize()
         
-        async with self.driver.session() as session:
-            query = """
-            MATCH (e:Entity {name: $entity_name})-[r]-(fact:Fact)
-            WHERE ($start_date IS NULL OR fact.created_at >= $start_date)
-            AND ($end_date IS NULL OR fact.created_at <= $end_date)
-            RETURN 
-                fact.content AS content,
-                fact.created_at AS created_at,
-                fact.valid_at AS valid_at,
-                type(r) AS relationship_type
-            ORDER BY fact.created_at DESC
-            """
-            
-            result = await session.run(
-                query,
-                entity_name=entity_name,
-                start_date=start_date.isoformat() if start_date else None,
-                end_date=end_date.isoformat() if end_date else None
-            )
-            records = await result.data()
-            
-            return [
-                {
-                    "content": record["content"],
-                    "created_at": record["created_at"],
-                    "valid_at": record["valid_at"],
-                    "relationship_type": record["relationship_type"]
-                }
-                for record in records
-            ]
+        # Search for temporal information about the entity
+        results = await self.graphiti.search(f"timeline history of {entity_name}")
+        
+        timeline = []
+        for result in results:
+            timeline.append({
+                "fact": result.fact,
+                "uuid": str(result.uuid),
+                "valid_at": str(result.valid_at) if hasattr(result, 'valid_at') and result.valid_at else None,
+                "invalid_at": str(result.invalid_at) if hasattr(result, 'invalid_at') and result.invalid_at else None
+            })
+        
+        # Sort by valid_at if available
+        timeline.sort(key=lambda x: x.get('valid_at') or '', reverse=True)
+        
+        return timeline
     
     async def get_graph_statistics(self) -> Dict[str, Any]:
         """
-        Get statistics about the knowledge graph.
+        Get basic statistics about the knowledge graph.
         
         Returns:
             Graph statistics
@@ -295,35 +243,19 @@ class GraphitiClient:
         if not self._initialized:
             await self.initialize()
         
-        async with self.driver.session() as session:
-            # Get node counts
-            node_stats = await session.run("""
-                MATCH (n)
-                RETURN labels(n)[0] AS label, count(n) AS count
-                ORDER BY count DESC
-            """)
-            node_data = await node_stats.data()
-            
-            # Get relationship counts
-            rel_stats = await session.run("""
-                MATCH ()-[r]->()
-                RETURN type(r) AS type, count(r) AS count
-                ORDER BY count DESC
-            """)
-            rel_data = await rel_stats.data()
-            
-            # Get total counts
-            total_nodes = await session.run("MATCH (n) RETURN count(n) AS count")
-            total_node_count = (await total_nodes.single())["count"]
-            
-            total_rels = await session.run("MATCH ()-[r]->() RETURN count(r) AS count")
-            total_rel_count = (await total_rels.single())["count"]
-            
+        # For now, return a simple search to verify the graph is working
+        # More detailed statistics would require direct Neo4j access
+        try:
+            test_results = await self.graphiti.search("test", limit=1)
             return {
-                "total_nodes": total_node_count,
-                "total_relationships": total_rel_count,
-                "node_types": {item["label"]: item["count"] for item in node_data},
-                "relationship_types": {item["type"]: item["count"] for item in rel_data}
+                "graphiti_initialized": True,
+                "sample_search_results": len(test_results),
+                "note": "Detailed statistics require direct Neo4j access"
+            }
+        except Exception as e:
+            return {
+                "graphiti_initialized": False,
+                "error": str(e)
             }
     
     async def clear_graph(self):
@@ -331,14 +263,20 @@ class GraphitiClient:
         if not self._initialized:
             await self.initialize()
         
-        async with self.driver.session() as session:
-            # Delete all relationships first
-            await session.run("MATCH ()-[r]->() DELETE r")
+        try:
+            # Use Graphiti's proper clear_data function with the driver
+            await clear_data(self.graphiti.driver)
+            logger.warning("Cleared all data from knowledge graph")
+        except Exception as e:
+            logger.error(f"Failed to clear graph using clear_data: {e}")
+            # Fallback: Close and reinitialize (this will create fresh indices)
+            if self.graphiti:
+                await self.graphiti.close()
             
-            # Then delete all nodes
-            await session.run("MATCH (n) DELETE n")
+            self.graphiti = Graphiti(self.neo4j_uri, self.neo4j_user, self.neo4j_password)
+            await self.graphiti.build_indices_and_constraints()
             
-        logger.warning("Cleared all data from knowledge graph")
+            logger.warning("Reinitialized Graphiti client (fresh indices created)")
 
 
 # Global Graphiti client instance

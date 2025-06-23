@@ -173,9 +173,16 @@ class GraphBuilder:
         
         # Extract key entities from chunk metadata
         if "entities" in chunk.metadata:
-            entities = chunk.metadata["entities"]
-            if entities:
-                context_info.append(f"Key entities: {', '.join(entities[:5])}")  # Limit to 5
+            entities_dict = chunk.metadata["entities"]
+            if entities_dict and isinstance(entities_dict, dict):
+                # Flatten all entity lists and take first 5
+                all_entities = []
+                for entity_type, entity_list in entities_dict.items():
+                    if isinstance(entity_list, list):
+                        all_entities.extend(entity_list)
+                
+                if all_entities:
+                    context_info.append(f"Key entities: {', '.join(all_entities[:5])}")  # Limit to 5
         
         # Build episode content
         if context_info:

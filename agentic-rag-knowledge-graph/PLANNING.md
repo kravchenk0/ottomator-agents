@@ -66,7 +66,7 @@ This project builds an AI agent system that combines traditional RAG (Retrieval 
 - **FastAPI**: API framework
 - **PostgreSQL + pgvector**: Vector database
 - **Neo4j + Graphiti**: Knowledge graph
-- **OpenAI API**: Embeddings and LLM
+- **Flexible LLM Providers**: OpenAI, Ollama, OpenRouter, Gemini
 
 ### Key Libraries
 - **asyncpg**: PostgreSQL async driver
@@ -124,6 +124,12 @@ This project builds an AI agent system that combines traditional RAG (Retrieval 
 - Session management
 - File attachment support
 
+### 5. Flexible Provider System
+- Multiple LLM providers (OpenAI, Ollama, OpenRouter, Gemini)
+- Environment-based provider switching
+- Separate models for different tasks (chat vs ingestion)
+- OpenAI-compatible API interface
+
 ## Implementation Strategy
 
 ### Phase 1: Foundation
@@ -166,10 +172,14 @@ NEO4J_URI=bolt://localhost:7687
 NEO4J_USER=neo4j
 NEO4J_PASSWORD=password
 
-# AI/ML
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4-turbo-preview
+# LLM Configuration  
+LLM_PROVIDER=openai  # openai, ollama, openrouter, gemini
+LLM_BASE_URL=https://api.openai.com/v1
+LLM_API_KEY=sk-...
+LLM_CHOICE=gpt-4-turbo-preview
+EMBEDDING_PROVIDER=openai
 EMBEDDING_MODEL=text-embedding-3-small
+INGESTION_LLM_CHOICE=gpt-4o-mini
 
 # Application
 APP_ENV=development
@@ -203,8 +213,11 @@ LOG_LEVEL=INFO
 - Usage analytics
 
 ## Future Enhancements
-- Multi-model support
+- ✅ ~~Multi-model support~~ (Completed - Flexible provider system)
 - Advanced reranking algorithms
 - Real-time document updates
 - GraphQL API option
 - Web UI for exploration
+- Additional LLM providers (Anthropic Claude direct, Cohere, etc.)
+- Embedding provider diversity (Voyage, Cohere embeddings)
+- Model performance optimization and caching

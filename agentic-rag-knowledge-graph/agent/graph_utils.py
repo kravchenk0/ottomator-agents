@@ -11,7 +11,6 @@ from contextlib import asynccontextmanager
 import asyncio
 
 from graphiti_core import Graphiti
-from graphiti_core.prompts import Prompt
 from neo4j import AsyncGraphDatabase, AsyncDriver
 from neo4j.exceptions import Neo4jError
 from dotenv import load_dotenv

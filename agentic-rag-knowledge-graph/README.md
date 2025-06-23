@@ -135,7 +135,7 @@ python -m ingestion.ingest
 # Clean existing data and re-ingest everything
 python -m ingestion.ingest --clean
 
-# Custom settings for faster processing
+# Custom settings for faster processing (no knowledge graph)
 python -m ingestion.ingest --chunk-size 800 --no-semantic --verbose
 ```
 
@@ -145,25 +145,87 @@ The ingestion process will:
 - Extract entities and relationships for the knowledge graph
 - Store everything in PostgreSQL and Neo4j
 
-### 3. Start the API Server
+NOTE that this can take a while because knowledge graphs are very computationally expensive!
+
+### 3. Start the API Server (Terminal 1)
 
 ```bash
 # Start the FastAPI server
 python -m agent.api
 
-# Server will be available at http://localhost:8000
+# Server will be available at http://localhost:8058
 ```
 
-### 4. Test the System
+### 4. Use the Command Line Interface (Terminal 2)
+
+The CLI provides an interactive way to chat with the agent and see which tools it uses for each query.
+
+```bash
+# Start the CLI in a separate terminal from the API (connects to default API at http://localhost:8058)
+python cli.py
+
+# Connect to a different URL
+python cli.py --url http://localhost:8058
+
+# Connect to a specific port
+python cli.py --port 8080
+```
+
+#### CLI Features
+
+- **Real-time streaming responses** - See the agent's response as it's generated
+- **Tool usage visibility** - Understand which tools the agent used:
+  - `vector_search` - Semantic similarity search
+  - `graph_search` - Knowledge graph queries
+  - `hybrid_search` - Combined search approach
+- **Session management** - Maintains conversation context
+- **Color-coded output** - Easy to read responses and tool information
+
+#### Example CLI Session
+
+```
+🤖 Agentic RAG with Knowledge Graph CLI
+============================================================
+Connected to: http://localhost:8058
+
+You: What are Microsoft's AI initiatives?
+
+🤖 Assistant:
+Microsoft has several major AI initiatives including...
+
+🛠 Tools Used:
+  1. vector_search (query='Microsoft AI initiatives', limit=10)
+  2. graph_search (query='Microsoft AI projects')
+
+────────────────────────────────────────────────────────────
+
+You: How is Microsoft connected to OpenAI?
+
+🤖 Assistant:
+Microsoft has a significant strategic partnership with OpenAI...
+
+🛠 Tools Used:
+  1. hybrid_search (query='Microsoft OpenAI partnership', limit=10)
+  2. get_entity_relationships (entity='Microsoft')
+```
+
+#### CLI Commands
+
+- `help` - Show available commands
+- `health` - Check API connection status
+- `clear` - Clear current session
+- `exit` or `quit` - Exit the CLI
+
+### 5. Test the System
 
 #### Health Check
 ```bash
-curl http://localhost:8000/health
+curl http://localhost:8058/health
 ```
 
 #### Chat with the Agent (Non-streaming)
 ```bash
-curl -X POST "http://localhost:8000/chat" \
+curl -X POST "http://localhost:8058/chat" \
   -H "Content-Type: application/json" \
   -d '{
     "message": "What are Google'\''s main AI initiatives?"
@@ -172,7 +234,7 @@ curl -X POST "http://localhost:8000/chat" \
 
 #### Streaming Chat
 ```bash
-curl -X POST "http://localhost:8000/chat/stream" \
+curl -X POST "http://localhost:8058/chat/stream" \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Compare Microsoft and Google'\''s AI strategies",
@@ -228,7 +290,7 @@ The system excels at queries that benefit from both semantic search and relation
 
 ## API Documentation
 
-Visit http://localhost:8000/docs for interactive API documentation once the server is running.
+Visit http://localhost:8058/docs for interactive API documentation once the server is running.
 
 ## Key Features
 

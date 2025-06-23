@@ -113,7 +113,6 @@ class GraphitiClient:
     async def search(
         self,
         query: str,
-        limit: int = 10,
         center_node_distance: int = 2,
         use_hybrid_search: bool = True
     ) -> List[Dict[str, Any]]:
@@ -122,7 +121,6 @@ class GraphitiClient:
         
         Args:
             query: Search query
-            limit: Maximum number of results
             center_node_distance: Distance from center nodes
             use_hybrid_search: Whether to use hybrid search
         
@@ -145,7 +143,7 @@ class GraphitiClient:
                     "invalid_at": str(result.invalid_at) if hasattr(result, 'invalid_at') and result.invalid_at else None,
                     "source_node_uuid": str(result.source_node_uuid) if hasattr(result, 'source_node_uuid') and result.source_node_uuid else None
                 }
-                for result in results[:limit]
+                for result in results
             ]
             
         except Exception as e:
@@ -246,7 +244,7 @@ class GraphitiClient:
         # For now, return a simple search to verify the graph is working
         # More detailed statistics would require direct Neo4j access
         try:
-            test_results = await self.graphiti.search("test", limit=1)
+            test_results = await self.graphiti.search("test")
             return {
                 "graphiti_initialized": True,
                 "sample_search_results": len(test_results),
@@ -326,20 +324,18 @@ async def add_to_knowledge_graph(
 
 
 async def search_knowledge_graph(
-    query: str,
-    limit: int = 10
+    query: str
 ) -> List[Dict[str, Any]]:
     """
     Search the knowledge graph.
     
     Args:
         query: Search query
-        limit: Maximum number of results
     
     Returns:
         Search results
     """
-    return await graph_client.search(query, limit=limit)
+    return await graph_client.search(query)
 
 
 async def get_entity_relationships(

@@ -383,9 +383,12 @@ async def vector_search(
         List of matching chunks with similarity scores
     """
     async with db_pool.acquire() as conn:
+        # Convert embedding list to string format for PostgreSQL vector type
+        embedding_str = str(embedding)
+        
         results = await conn.fetch(
             "SELECT * FROM match_chunks($1::vector, $2, $3)",
-            embedding,
+            embedding_str,
             limit,
             similarity_threshold
         )
@@ -425,9 +428,12 @@ async def hybrid_search(
         List of matching chunks with combined scores
     """
     async with db_pool.acquire() as conn:
+        # Convert embedding list to string format for PostgreSQL vector type
+        embedding_str = str(embedding)
+        
         results = await conn.fetch(
             "SELECT * FROM hybrid_search($1::vector, $2, $3, $4, $5)",
-            embedding,
+            embedding_str,
             query_text,
             limit,
             similarity_threshold,

@@ -68,7 +68,6 @@ class VectorSearchInput(BaseModel):
 class GraphSearchInput(BaseModel):
     """Input for graph search tool."""
     query: str = Field(..., description="Search query")
-    limit: int = Field(default=10, description="Maximum number of results")
 
 
 class HybridSearchInput(BaseModel):
@@ -116,6 +115,9 @@ async def vector_search_tool(input_data: VectorSearchInput) -> List[ChunkResult]
     try:
         # Generate embedding for the query
         embedding = await generate_embedding(input_data.query)
+
+        print(embedding)
+        print(input_data)
         
         # Perform vector search
         results = await vector_search(
@@ -124,6 +126,8 @@ async def vector_search_tool(input_data: VectorSearchInput) -> List[ChunkResult]
             similarity_threshold=input_data.similarity_threshold
         )
         
+        print(results)
+
         # Convert to ChunkResult models
         return [
             ChunkResult(
@@ -155,19 +159,17 @@ async def graph_search_tool(input_data: GraphSearchInput) -> List[GraphSearchRes
     """
     try:
         results = await search_knowledge_graph(
-            query=input_data.query,
-            limit=input_data.limit
+            query=input_data.query
         )
         
         # Convert to GraphSearchResult models
         return [
             GraphSearchResult(
                 fact=r["fact"],
-                episodes=r["episodes"],
-                created_at=r.get("created_at"),
-                expired_at=r.get("expired_at"),
+                uuid=r["uuid"],
                 valid_at=r.get("valid_at"),
-                uuid=r["uuid"]
+                invalid_at=r.get("invalid_at"),
+                source_node_uuid=r.get("source_node_uuid")
             )
             for r in results
         ]
@@ -353,7 +355,7 @@ async def perform_comprehensive_search(
         query: Search query
         use_vector: Whether to use vector search
         use_graph: Whether to use graph search
-        limit: Maximum results per search type
+        limit: Maximum results per search type (only applies to vector search)
     
     Returns:
         Combined search results
@@ -371,7 +373,7 @@ async def perform_comprehensive_search(
         tasks.append(vector_search_tool(VectorSearchInput(query=query, limit=limit)))
     
     if use_graph:
-        tasks.append(graph_search_tool(GraphSearchInput(query=query, limit=limit)))
+        tasks.append(graph_search_tool(GraphSearchInput(query=query)))
     
     if tasks:
         search_results = await asyncio.gather(*tasks, return_exceptions=True)

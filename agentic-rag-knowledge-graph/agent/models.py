@@ -77,11 +77,10 @@ class ChunkResult(BaseModel):
 class GraphSearchResult(BaseModel):
     """Knowledge graph search result model."""
     fact: str
-    episodes: List[Dict[str, Any]]
-    created_at: Optional[datetime]
-    expired_at: Optional[datetime]
-    valid_at: Optional[datetime]
     uuid: str
+    valid_at: Optional[str] = None
+    invalid_at: Optional[str] = None
+    source_node_uuid: Optional[str] = None
 
 
 class EntityRelationship(BaseModel):

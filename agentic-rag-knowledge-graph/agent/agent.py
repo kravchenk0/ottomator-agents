@@ -106,8 +106,7 @@ async def vector_search(
 @rag_agent.tool
 async def graph_search(
     ctx: RunContext[AgentDependencies],
-    query: str,
-    limit: int = 10
+    query: str
 ) -> List[Dict[str, Any]]:
     """
     Search the knowledge graph for facts and relationships.
@@ -118,12 +117,11 @@ async def graph_search(
     
     Args:
         query: Search query to find facts and relationships
-        limit: Maximum number of results to return (1-50)
     
     Returns:
         List of facts with associated episodes and temporal data
     """
-    input_data = GraphSearchInput(query=query, limit=limit)
+    input_data = GraphSearchInput(query=query)
     
     results = await graph_search_tool(input_data)
     
@@ -131,9 +129,10 @@ async def graph_search(
     return [
         {
             "fact": r.fact,
-            "episodes": r.episodes,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
-            "valid_at": r.valid_at.isoformat() if r.valid_at else None
+            "uuid": r.uuid,
+            "valid_at": r.valid_at,
+            "invalid_at": r.invalid_at,
+            "source_node_uuid": r.source_node_uuid
         }
         for r in results
     ]

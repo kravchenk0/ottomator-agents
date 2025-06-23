@@ -166,8 +166,7 @@ curl http://localhost:8000/health
 curl -X POST "http://localhost:8000/chat" \
   -H "Content-Type: application/json" \
   -d '{
-    "message": "What are Google'\''s main AI initiatives?",
-    "search_type": "hybrid"
+    "message": "What are Google'\''s main AI initiatives?"
   }'
 ```
 
@@ -177,7 +176,6 @@ curl -X POST "http://localhost:8000/chat/stream" \
   -H "Content-Type: application/json" \
   -d '{
     "message": "Compare Microsoft and Google'\''s AI strategies",
-    "search_type": "hybrid"
   }'
 ```
 

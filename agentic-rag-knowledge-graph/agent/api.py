@@ -321,7 +321,7 @@ async def chat(request: ChatRequest):
         return ChatResponse(
             message=response,
             session_id=session_id,
-            metadata={"search_type": request.search_type.value}
+            metadata={"search_type": str(request.search_type)}
         )
         
     except Exception as e:
@@ -453,8 +453,7 @@ async def search_graph(request: SearchRequest):
     """Knowledge graph search endpoint."""
     try:
         input_data = GraphSearchInput(
-            query=request.query,
-            limit=request.limit
+            query=request.query
         )
         
         start_time = datetime.now()

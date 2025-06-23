@@ -229,27 +229,31 @@ class DocumentIngestionPipeline:
         
         logger.info(f"Saved document to PostgreSQL with ID: {document_id}")
         
-        # Add to knowledge graph
+        # Add to knowledge graph (if enabled)
         relationships_created = 0
         graph_errors = []
         
-        try:
-            graph_result = await self.graph_builder.add_document_to_graph(
-                chunks=embedded_chunks,
-                document_title=document_title,
-                document_source=document_source,
-                document_metadata=document_metadata
-            )
-            
-            relationships_created = graph_result.get("episodes_created", 0)
-            graph_errors = graph_result.get("errors", [])
-            
-            logger.info(f"Added {relationships_created} episodes to knowledge graph")
-            
-        except Exception as e:
-            error_msg = f"Failed to add to knowledge graph: {str(e)}"
-            logger.error(error_msg)
-            graph_errors.append(error_msg)
+        if not self.config.skip_graph_building:
+            try:
+                logger.info("Building knowledge graph relationships (this may take several minutes)...")
+                graph_result = await self.graph_builder.add_document_to_graph(
+                    chunks=embedded_chunks,
+                    document_title=document_title,
+                    document_source=document_source,
+                    document_metadata=document_metadata
+                )
+                
+                relationships_created = graph_result.get("episodes_created", 0)
+                graph_errors = graph_result.get("errors", [])
+                
+                logger.info(f"Added {relationships_created} episodes to knowledge graph")
+                
+            except Exception as e:
+                error_msg = f"Failed to add to knowledge graph: {str(e)}"
+                logger.error(error_msg)
+                graph_errors.append(error_msg)
+        else:
+            logger.info("Skipping knowledge graph building (skip_graph_building=True)")
         
         # Calculate processing time
         processing_time = (datetime.now() - start_time).total_seconds() * 1000
@@ -406,6 +410,7 @@ async def main():
     parser.add_argument("--chunk-overlap", type=int, default=200, help="Chunk overlap size")
     parser.add_argument("--no-semantic", action="store_true", help="Disable semantic chunking")
     parser.add_argument("--no-entities", action="store_true", help="Disable entity extraction")
+    parser.add_argument("--fast", "-f", action="store_true", help="Fast mode: skip knowledge graph building")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
     
     args = parser.parse_args()
@@ -422,7 +427,8 @@ async def main():
         chunk_size=args.chunk_size,
         chunk_overlap=args.chunk_overlap,
         use_semantic_chunking=not args.no_semantic,
-        extract_entities=not args.no_entities
+        extract_entities=not args.no_entities,
+        skip_graph_building=args.fast
     )
     
     # Create and run pipeline

@@ -56,7 +56,7 @@ class GraphBuilder:
         document_title: str,
         document_source: str,
         document_metadata: Optional[Dict[str, Any]] = None,
-        batch_size: int = 10
+        batch_size: int = 3  # Reduced batch size for Graphiti
     ) -> Dict[str, Any]:
         """
         Add document chunks to the knowledge graph.
@@ -119,16 +119,17 @@ class GraphBuilder:
                     )
                     
                     episodes_created += 1
-                    logger.debug(f"Added episode {episode_id} to knowledge graph")
+                    logger.info(f"✓ Added episode {episode_id} to knowledge graph ({episodes_created}/{len(chunks)})")
                     
                 except Exception as e:
                     error_msg = f"Failed to add chunk {chunk.index} to graph: {str(e)}"
                     logger.error(error_msg)
                     errors.append(error_msg)
             
-            # Small delay between batches to avoid overwhelming the system
+            # Longer delay between batches to avoid rate limits and reduce API pressure
             if i + batch_size < len(chunks):
-                await asyncio.sleep(0.5)
+                logger.info(f"Processed batch {(i//batch_size)+1}, waiting before next batch...")
+                await asyncio.sleep(2.0)  # Increased delay
         
         result = {
             "episodes_created": episodes_created,

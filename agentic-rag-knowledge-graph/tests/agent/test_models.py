@@ -167,18 +167,17 @@ class TestResponseModels:
         now = datetime.now()
         result = GraphSearchResult(
             fact="Google acquired DeepMind",
-            episodes=[{"id": "ep1", "content": "test"}],
-            created_at=now,
-            expired_at=None,  # Required field
-            valid_at=now,
-            uuid="test-uuid"
+            uuid="test-uuid",
+            valid_at=now.isoformat(),
+            invalid_at=None,
+            source_node_uuid="source-uuid"
         )
         
         assert result.fact == "Google acquired DeepMind"
-        assert len(result.episodes) == 1
-        assert result.created_at == now
-        assert result.expired_at is None
         assert result.uuid == "test-uuid"
+        assert result.valid_at == now.isoformat()
+        assert result.invalid_at is None
+        assert result.source_node_uuid == "source-uuid"
     
     def test_search_response(self):
         """Test search response model."""

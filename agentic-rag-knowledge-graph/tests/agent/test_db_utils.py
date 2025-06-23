@@ -326,7 +326,7 @@ class TestVectorSearch:
             mock_pool.acquire.return_value.__aexit__ = AsyncMock(return_value=None)
             
             embedding = [0.1] * 1536  # Mock embedding
-            results = await vector_search(embedding, limit=5, similarity_threshold=0.8)
+            results = await vector_search(embedding, limit=5)
             
             assert len(results) == 1
             assert results[0]["chunk_id"] == "chunk-1"

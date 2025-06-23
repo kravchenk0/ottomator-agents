@@ -114,23 +114,18 @@ async def vector_search_tool(input_data: VectorSearchInput) -> List[ChunkResult]
     try:
         # Generate embedding for the query
         embedding = await generate_embedding(input_data.query)
-
-        print(embedding)
-        print(input_data)
         
         # Perform vector search
         results = await vector_search(
             embedding=embedding,
             limit=input_data.limit
         )
-        
-        print(results)
 
         # Convert to ChunkResult models
         return [
             ChunkResult(
-                chunk_id=r["chunk_id"],
-                document_id=r["document_id"],
+                chunk_id=str(r["chunk_id"]),
+                document_id=str(r["document_id"]),
                 content=r["content"],
                 score=r["similarity"],
                 metadata=r["metadata"],
@@ -202,8 +197,8 @@ async def hybrid_search_tool(input_data: HybridSearchInput) -> List[ChunkResult]
         # Convert to ChunkResult models
         return [
             ChunkResult(
-                chunk_id=r["chunk_id"],
-                document_id=r["document_id"],
+                chunk_id=str(r["chunk_id"]),
+                document_id=str(r["document_id"]),
                 content=r["content"],
                 score=r["combined_score"],
                 metadata=r["metadata"],

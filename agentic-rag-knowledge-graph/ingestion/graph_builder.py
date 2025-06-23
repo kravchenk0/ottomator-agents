@@ -78,58 +78,61 @@ class GraphBuilder:
             return {"episodes_created": 0, "errors": []}
         
         logger.info(f"Adding {len(chunks)} chunks to knowledge graph for document: {document_title}")
+        logger.info("⚠️ Large chunks will be truncated to avoid Graphiti token limits.")
+        
+        # Check for oversized chunks and warn
+        oversized_chunks = [i for i, chunk in enumerate(chunks) if len(chunk.content) > 6000]
+        if oversized_chunks:
+            logger.warning(f"Found {len(oversized_chunks)} chunks over 6000 chars that will be truncated: {oversized_chunks}")
         
         episodes_created = 0
         errors = []
         
-        # Process chunks in batches
-        for i in range(0, len(chunks), batch_size):
-            batch_chunks = chunks[i:i + batch_size]
-            
-            for chunk in batch_chunks:
-                try:
-                    # Create episode ID
-                    episode_id = f"{document_source}_{chunk.index}_{datetime.now().timestamp()}"
+        # Process chunks one by one to avoid overwhelming Graphiti
+        for i, chunk in enumerate(chunks):
+            try:
+                # Create episode ID
+                episode_id = f"{document_source}_{chunk.index}_{datetime.now().timestamp()}"
+                
+                # Prepare episode content with size limits
+                episode_content = self._prepare_episode_content(
+                    chunk,
+                    document_title,
+                    document_metadata
+                )
+                
+                # Create source description (shorter)
+                source_description = f"Document: {document_title} (Chunk: {chunk.index})"
+                
+                # Add episode to graph
+                await self.graph_client.add_episode(
+                    episode_id=episode_id,
+                    content=episode_content,
+                    source=source_description,
+                    timestamp=datetime.now(timezone.utc),
+                    metadata={
+                        "document_title": document_title,
+                        "document_source": document_source,
+                        "chunk_index": chunk.index,
+                        "original_length": len(chunk.content),
+                        "processed_length": len(episode_content)
+                    }
+                )
+                
+                episodes_created += 1
+                logger.info(f"✓ Added episode {episode_id} to knowledge graph ({episodes_created}/{len(chunks)})")
+                
+                # Small delay between each episode to reduce API pressure
+                if i < len(chunks) - 1:
+                    await asyncio.sleep(0.5)
                     
-                    # Prepare episode content with context
-                    episode_content = self._prepare_episode_content(
-                        chunk,
-                        document_title,
-                        document_metadata
-                    )
-                    
-                    # Create source description
-                    source_description = f"Document: {document_title} (Source: {document_source}, Chunk: {chunk.index})"
-                    
-                    # Add episode to graph
-                    await self.graph_client.add_episode(
-                        episode_id=episode_id,
-                        content=episode_content,
-                        source=source_description,
-                        timestamp=datetime.now(timezone.utc),
-                        metadata={
-                            "document_title": document_title,
-                            "document_source": document_source,
-                            "chunk_index": chunk.index,
-                            "chunk_start": chunk.start_char,
-                            "chunk_end": chunk.end_char,
-                            **(document_metadata or {}),
-                            **chunk.metadata
-                        }
-                    )
-                    
-                    episodes_created += 1
-                    logger.info(f"✓ Added episode {episode_id} to knowledge graph ({episodes_created}/{len(chunks)})")
-                    
-                except Exception as e:
-                    error_msg = f"Failed to add chunk {chunk.index} to graph: {str(e)}"
-                    logger.error(error_msg)
-                    errors.append(error_msg)
-            
-            # Longer delay between batches to avoid rate limits and reduce API pressure
-            if i + batch_size < len(chunks):
-                logger.info(f"Processed batch {(i//batch_size)+1}, waiting before next batch...")
-                await asyncio.sleep(2.0)  # Increased delay
+            except Exception as e:
+                error_msg = f"Failed to add chunk {chunk.index} to graph: {str(e)}"
+                logger.error(error_msg)
+                errors.append(error_msg)
+                
+                # Continue processing other chunks even if one fails
+                continue
         
         result = {
             "episodes_created": episodes_created,
@@ -147,7 +150,7 @@ class GraphBuilder:
         document_metadata: Optional[Dict[str, Any]] = None
     ) -> str:
         """
-        Prepare episode content with context for better entity extraction.
+        Prepare episode content with minimal context to avoid token limits.
         
         Args:
             chunk: Document chunk
@@ -155,44 +158,44 @@ class GraphBuilder:
             document_metadata: Additional metadata
         
         Returns:
-            Formatted episode content
+            Formatted episode content (optimized for Graphiti)
         """
-        # Add context to help with entity extraction
-        context_info = []
+        # Limit chunk content to avoid Graphiti's 8192 token limit
+        # Estimate ~4 chars per token, keep content under 6000 chars to leave room for processing
+        max_content_length = 6000
         
-        if document_title:
-            context_info.append(f"Document: {document_title}")
+        content = chunk.content
+        if len(content) > max_content_length:
+            # Truncate content but try to end at a sentence boundary
+            truncated = content[:max_content_length]
+            last_sentence_end = max(
+                truncated.rfind('. '),
+                truncated.rfind('! '),
+                truncated.rfind('? ')
+            )
+            
+            if last_sentence_end > max_content_length * 0.7:  # If we can keep 70% and end cleanly
+                content = truncated[:last_sentence_end + 1] + " [TRUNCATED]"
+            else:
+                content = truncated + "... [TRUNCATED]"
+            
+            logger.warning(f"Truncated chunk {chunk.index} from {len(chunk.content)} to {len(content)} chars for Graphiti")
         
-        # Add relevant metadata as context
-        if document_metadata:
-            if "date" in document_metadata:
-                context_info.append(f"Date: {document_metadata['date']}")
-            if "company" in document_metadata:
-                context_info.append(f"Company: {document_metadata['company']}")
-            if "topic" in document_metadata:
-                context_info.append(f"Topic: {document_metadata['topic']}")
-        
-        # Extract key entities from chunk metadata
-        if "entities" in chunk.metadata:
-            entities_dict = chunk.metadata["entities"]
-            if entities_dict and isinstance(entities_dict, dict):
-                # Flatten all entity lists and take first 5
-                all_entities = []
-                for entity_type, entity_list in entities_dict.items():
-                    if isinstance(entity_list, list):
-                        all_entities.extend(entity_list)
-                
-                if all_entities:
-                    context_info.append(f"Key entities: {', '.join(all_entities[:5])}")  # Limit to 5
-        
-        # Build episode content
-        if context_info:
-            context_str = " | ".join(context_info)
-            episode_content = f"[Context: {context_str}]\n\n{chunk.content}"
+        # Add minimal context (just document title for now)
+        if document_title and len(content) < max_content_length - 100:
+            episode_content = f"[Doc: {document_title[:50]}]\n\n{content}"
         else:
-            episode_content = chunk.content
+            episode_content = content
         
         return episode_content
+    
+    def _estimate_tokens(self, text: str) -> int:
+        """Rough estimate of token count (4 chars per token)."""
+        return len(text) // 4
+    
+    def _is_content_too_large(self, content: str, max_tokens: int = 7000) -> bool:
+        """Check if content is too large for Graphiti processing."""
+        return self._estimate_tokens(content) > max_tokens
     
     async def extract_entities_from_chunks(
         self,

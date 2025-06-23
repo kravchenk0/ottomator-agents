@@ -125,6 +125,12 @@ mkdir -p documents
 #          documents/microsoft_openai_partnership.md
 ```
 
+**Note**: For a comprehensive example with extensive content, you can copy the provided `big_tech_docs` folder:
+```bash
+cp -r big_tech_docs/* documents/
+```
+This includes 21 detailed documents about major tech companies and their AI initiatives. Be aware that processing all these files into the knowledge graph will take significant time (potentially 30+ minutes) due to the computational complexity of entity extraction and relationship building.
+
 ### 2. Run Document Ingestion
 
 **Important**: You must run ingestion first to populate the databases before the agent can provide meaningful responses.

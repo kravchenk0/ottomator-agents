@@ -1,6 +1,6 @@
 # Agentic RAG with Knowledge Graph
 
-An intelligent AI agent system that combines traditional RAG (vector search) with knowledge graph capabilities to analyze and provide insights about big tech companies and their AI initiatives. The system uses PostgreSQL with pgvector for semantic search and Neo4j with Graphiti for temporal knowledge graphs.
+Agentic knowledge retrieval redefined with an AI agent system that combines traditional RAG (vector search) with knowledge graph capabilities to analyze and provide insights about big tech companies and their AI initiatives. The system uses PostgreSQL with pgvector for semantic search and Neo4j with Graphiti for temporal knowledge graphs. The goal is to create Agentic RAG at its finest.
 
 ## Overview
 
@@ -13,9 +13,9 @@ This system includes three main components:
 ## Prerequisites
 
 - Python 3.11 or higher
-- PostgreSQL database with pgvector extension
+- PostgreSQL database (such as Neon)
 - Neo4j database (for knowledge graph)
-- LLM Provider API key (OpenAI, Ollama, OpenRouter, or Gemini)
+- LLM Provider API key (OpenAI, Ollama, Gemini, etc.)
 
 ## Installation
 
@@ -23,22 +23,23 @@ This system includes three main components:
 
 ```bash
 # Create and activate virtual environment
-python3.11 -m venv venv_linux
-source venv_linux/bin/activate  # On Linux/macOS
+python -m venv venv       # python3 on Linux
+source venv/bin/activate  # On Linux/macOS
 # or
-venv_linux\Scripts\activate     # On Windows
+venv\Scripts\activate     # On Windows
 ```
 
 ### 2. Install dependencies
 
 ```bash
-pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
 ### 3. Set up required tables in Postgres
 
 Execute the SQL in `sql/schema.sql` to create all necessary tables, indexes, and functions.
+
+Be sure to change the embedding dimensions on lines 31, 67, and 100 based on your embedding model. OpenAI's text-embedding-3-small is 1536 and nomic-embed-text from Ollama is 768 dimensions, for reference.
 
 Note that this script will drop all tables before creating/recreating!
 

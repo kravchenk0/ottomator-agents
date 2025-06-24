@@ -1,9 +1,7 @@
--- Enable required extensions
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
--- Drop existing tables if they exist (for clean setup)
 DROP TABLE IF EXISTS messages CASCADE;
 DROP TABLE IF EXISTS sessions CASCADE;
 DROP TABLE IF EXISTS chunks CASCADE;
@@ -13,7 +11,6 @@ DROP INDEX IF EXISTS idx_chunks_document_id;
 DROP INDEX IF EXISTS idx_documents_metadata;
 DROP INDEX IF EXISTS idx_chunks_content_trgm;
 
--- Documents table to store document metadata
 CREATE TABLE documents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     title TEXT NOT NULL,
@@ -24,29 +21,25 @@ CREATE TABLE documents (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create index on metadata for fast filtering
 CREATE INDEX idx_documents_metadata ON documents USING GIN (metadata);
 CREATE INDEX idx_documents_created_at ON documents (created_at DESC);
 
--- Chunks table to store document chunks with embeddings
 CREATE TABLE chunks (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
     content TEXT NOT NULL,
-    embedding vector(1536), -- OpenAI text-embedding-3-small dimension
+    embedding vector(1536),
     chunk_index INTEGER NOT NULL,
     metadata JSONB DEFAULT '{}',
     token_count INTEGER,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create indexes for efficient vector search
-CREATE INDEX idx_chunks_embedding ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 100);
+CREATE INDEX idx_chunks_embedding ON chunks USING ivfflat (embedding vector_cosine_ops) WITH (lists = 1);
 CREATE INDEX idx_chunks_document_id ON chunks (document_id);
 CREATE INDEX idx_chunks_chunk_index ON chunks (document_id, chunk_index);
 CREATE INDEX idx_chunks_content_trgm ON chunks USING GIN (content gin_trgm_ops);
 
--- Sessions table for conversation management
 CREATE TABLE sessions (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     user_id TEXT,
@@ -56,11 +49,9 @@ CREATE TABLE sessions (
     expires_at TIMESTAMP WITH TIME ZONE
 );
 
--- Create index for session queries
 CREATE INDEX idx_sessions_user_id ON sessions (user_id);
 CREATE INDEX idx_sessions_expires_at ON sessions (expires_at);
 
--- Messages table for conversation history
 CREATE TABLE messages (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     session_id UUID NOT NULL REFERENCES sessions(id) ON DELETE CASCADE,
@@ -70,10 +61,8 @@ CREATE TABLE messages (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Create index for message queries
 CREATE INDEX idx_messages_session_id ON messages (session_id, created_at);
 
--- Function for vector similarity search (no threshold - returns best matches)
 CREATE OR REPLACE FUNCTION match_chunks(
     query_embedding vector(1536),
     match_count INT DEFAULT 10
@@ -107,7 +96,6 @@ BEGIN
 END;
 $$;
 
--- Function for hybrid search (vector + keyword, no threshold - returns best matches)
 CREATE OR REPLACE FUNCTION hybrid_search(
     query_embedding vector(1536),
     query_text TEXT,
@@ -172,7 +160,6 @@ BEGIN
 END;
 $$;
 
--- Function to get document chunks
 CREATE OR REPLACE FUNCTION get_document_chunks(doc_id UUID)
 RETURNS TABLE (
     chunk_id UUID,
@@ -195,7 +182,6 @@ BEGIN
 END;
 $$;
 
--- Trigger to update updated_at timestamp
 CREATE OR REPLACE FUNCTION update_updated_at_column()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -210,7 +196,6 @@ CREATE TRIGGER update_documents_updated_at BEFORE UPDATE ON documents
 CREATE TRIGGER update_sessions_updated_at BEFORE UPDATE ON sessions
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- Create a view for document summaries
 CREATE OR REPLACE VIEW document_summaries AS
 SELECT 
     d.id,
@@ -225,7 +210,3 @@ SELECT
 FROM documents d
 LEFT JOIN chunks c ON d.id = c.document_id
 GROUP BY d.id, d.title, d.source, d.created_at, d.updated_at, d.metadata;
-
--- Grant permissions (adjust as needed for your setup)
--- GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO your_app_user;
--- GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA public TO your_app_user;

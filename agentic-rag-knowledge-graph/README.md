@@ -2,6 +2,15 @@
 
 Agentic knowledge retrieval redefined with an AI agent system that combines traditional RAG (vector search) with knowledge graph capabilities to analyze and provide insights about big tech companies and their AI initiatives. The system uses PostgreSQL with pgvector for semantic search and Neo4j with Graphiti for temporal knowledge graphs. The goal is to create Agentic RAG at its finest.
 
+Built with:
+
+- Pydantic AI for the AI Agent Framework
+- Graphiti for the Knowledge Graph
+- Postgres with PGVector for the Vector Database
+- Neo4j for the Knowledge Graph Engine (Graphiti connects to this)
+- FastAPI for the Agent API
+- Claude Code for the AI Coding Assistant (See `CLAUDE.md`, `PLANNING.md`, and `TASK.md`)
+
 ## Overview
 
 This system includes three main components:

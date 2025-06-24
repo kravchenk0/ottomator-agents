@@ -5,6 +5,20 @@ This document tracks all tasks for building the agentic RAG system with knowledg
 
 ---
 
+## Phase 0: MCP Server Integration & Setup
+
+### External Documentation Gathering
+- [X] Use Crawl4AI RAG to get Pydantic AI documentation and examples
+- [X] Query documentation for best practices and implementation patterns
+
+### Neon Database Project Setup
+- [X] Create new Neon database project using Neon MCP server
+- [X] Set up pgvector extension using Neon MCP server
+- [X] Create all required tables (documents, chunks, sessions, messages) using Neon MCP server
+- [X] Verify table creation using Neon MCP server tools
+- [X] Get connection string and update environment configuration
+- [X] Test database connectivity and basic operations using Neon MCP server
+
 ## Phase 1: Foundation & Setup
 
 ### Project Structure

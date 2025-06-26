@@ -3,7 +3,6 @@ venv
 venv_linux
 .env
 .claude
-CLAUDE.md
 .pytest_cache
 examples
 

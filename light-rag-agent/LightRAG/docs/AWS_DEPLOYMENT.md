@@ -1,6 +1,4 @@
-## Перемещено
-
-Полный документ: `docs/AWS_DEPLOYMENT.md`.
+# 🚀 LightRAG AWS Deployment Guide
 
 Полное руководство по развертыванию LightRAG на AWS с использованием Docker и различных инструментов.
 
@@ -317,4 +315,51 @@ docker stats
 docker-compose -f docker-compose.prod.yml restart
 ```
 
-<!-- Контент перенесён в docs/AWS_DEPLOYMENT.md -->
+## 📈 Масштабирование
+
+### 1. Горизонтальное масштабирование
+
+```bash
+# Увеличьте количество API контейнеров
+docker-compose -f docker-compose.prod.yml up -d --scale lightrag-api=3
+```
+
+### 2. Load Balancer
+
+```bash
+# Создайте Application Load Balancer
+aws elbv2 create-load-balancer \
+  --name lightrag-alb \
+  --subnets subnet-12345678 subnet-87654321
+```
+
+### 3. Auto Scaling
+
+```bash
+# Создайте Launch Template
+aws ec2 create-launch-template \
+  --launch-template-name lightrag-lt \
+  --version-description v1
+```
+
+## 🎯 Следующие шаги
+
+1. **Настройте CI/CD pipeline**
+2. **Добавьте мониторинг и алерты**
+3. **Настройте backup стратегию**
+4. **Реализуйте disaster recovery**
+5. **Оптимизируйте производительность**
+
+## 📞 Поддержка
+
+- Создайте Issue в репозитории
+- Проверьте AWS CloudTrail для отладки
+- Используйте AWS Support (если у вас есть план)
+- Обратитесь к сообществу DevOps
+
+## 📚 Дополнительные ресурсы
+
+- [AWS EC2 Documentation](https://docs.aws.amazon.com/ec2/)
+- [Docker Compose Documentation](https://docs.docker.com/compose/)
+- [Terraform AWS Provider](https://registry.terraform.io/providers/hashicorp/aws/latest/docs)
+- [AWS Well-Architected Framework](https://aws.amazon.com/architecture/well-architected/)

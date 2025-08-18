@@ -4,13 +4,58 @@ from __future__ import annotations
 import os
 from typing import Optional, Dict, Any
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from app.core import RAGManager, RAGConfig, get_default_config, get_temperature_adjustment_state
 from monkey_patch_lightrag import is_patch_applied
 from app.utils.logging import setup_logger, performance_logger
+from app.utils.ingestion import ingest_files, scan_directory, list_index
+from pathlib import Path
+import asyncio
+from fastapi import Header, status
+from app.utils.auth import require_jwt, issue_token
+from pydantic import BaseModel as _BM
+
+
+class TokenRequest(_BM):
+    user: str
+    role: str | None = None
+    # future: extra claims
+
+
+class TokenResponse(_BM):
+    access_token: str
+    token_type: str = "bearer"
+    role: str | None = None
+
+
+# ---------------- Security (API Key) ----------------
+_API_KEYS: set[str] | None = None
+
+
+def _load_api_keys() -> set[str] | None:
+    keys = os.getenv("RAG_API_KEYS") or os.getenv("RAG_API_KEY")
+    if not keys:
+        return None  # auth disabled
+    return {k.strip() for k in keys.split(",") if k.strip()}
+
+
+def api_keys_enabled() -> bool:
+    global _API_KEYS
+    if _API_KEYS is None:
+        _API_KEYS = _load_api_keys()
+    return bool(_API_KEYS)
+
+
+def require_api_key(x_api_key: str | None = Header(default=None)):
+    if not api_keys_enabled():  # open mode
+        return True
+    if not x_api_key or x_api_key not in _API_KEYS:  # type: ignore[arg-type]
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing API key")
+    return True
+
 
 logger = setup_logger("api_server", "INFO")
 
@@ -109,6 +154,20 @@ async def startup_event():  # noqa: D401
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Model self-test error: {e}")
                 _model_self_test = {"ok": False, "error": str(e), "tried": []}
+        # Auto-ingest on startup if configured
+        try:
+            auto_dir = os.getenv("RAG_INGEST_DIR")
+            auto_scan = os.getenv("RAG_AUTO_INGEST_ON_START", "1").lower() in {"1", "true", "yes"}
+            if rag_manager and auto_scan and auto_dir and os.path.isdir(auto_dir):
+                logger.info(f"Auto-ingest scan on startup: {auto_dir}")
+                rag = await rag_manager.get_rag()
+                files = scan_directory(auto_dir)
+                if files:
+                    from app.utils.ingestion import ingest_files as _if
+                    await _if(rag, files, rag_manager.config.working_dir)
+                    logger.info(f"Auto-ingested {len(files)} candidate files (filtered by change/hash)")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"Auto-ingest on startup failed: {e}")
     except Exception as e:  # noqa: BLE001
         logger.error(f"Failed init: {e}")
         if os.getenv("FAST_FAILLESS_INIT", "0").lower() not in {"1", "true", "yes"}:
@@ -141,7 +200,7 @@ async def health_check():
 
 
 @app.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depends(get_rag_manager)):
+async def chat_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     try:
         performance_logger.start_timer("chat_request")
         conv_id = request.conversation_id or f"conv_{hash(request.message) % 10000}"
@@ -178,7 +237,7 @@ async def chat_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depends(get_
 
 
 @app.post("/config", response_model=Dict[str, Any])
-async def update_config(request: ConfigRequest):
+async def update_config(request: ConfigRequest, _claims=Depends(require_jwt)):
     global rag_manager, system_prompt
     try:
         if request.working_dir:
@@ -204,7 +263,7 @@ async def update_config(request: ConfigRequest):
 
 
 @app.get("/config")
-async def get_config():
+async def get_config(_claims=Depends(require_jwt)):
     return {
         "working_dir": rag_manager.config.working_dir if rag_manager else None,
         "system_prompt": system_prompt,
@@ -213,7 +272,7 @@ async def get_config():
 
 
 @app.post("/documents/insert")
-async def insert_document(content: str, document_id: Optional[str] = None, rag_mgr: RAGManager = Depends(get_rag_manager)):
+async def insert_document(content: str, document_id: Optional[str] = None, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     try:
         rag = await rag_mgr.get_rag()
         await rag.ainsert(content)
@@ -223,13 +282,75 @@ async def insert_document(content: str, document_id: Optional[str] = None, rag_m
 
 
 @app.get("/documents/search")
-async def search_documents(query: str, limit: int = 5, rag_mgr: RAGManager = Depends(get_rag_manager)):
+async def search_documents(query: str, limit: int = 5, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     try:
         rag = await rag_mgr.get_rag()
         results = await rag.aquery(query, param={"mode": "mix"})
         return {"query": query, "results": results, "limit": limit}
     except Exception as e:  # noqa: BLE001
         raise HTTPException(status_code=500, detail=f"Failed to search documents: {e}")
+
+
+# Ingestion support
+_ingest_lock = asyncio.Lock()
+
+
+@app.post("/documents/upload")
+async def upload_document(file: UploadFile = File(...), ingest: bool = True, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
+    rag = await rag_mgr.get_rag()
+    content_bytes = await file.read()
+    if not content_bytes:
+        raise HTTPException(status_code=400, detail="Empty file")
+    raw_dir = Path(rag_mgr.config.working_dir) / "raw_uploads"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    dest = raw_dir / file.filename
+    dest.write_bytes(content_bytes)
+    result = None
+    if ingest:
+        async with _ingest_lock:
+            result = await ingest_files(rag, [dest], rag_mgr.config.working_dir)
+    return {"status": "ok", "stored_as": str(dest), "ingestion": result}
+
+
+@app.post("/documents/ingest/scan")
+async def ingest_scan(directory: str | None = None, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
+    rag = await rag_mgr.get_rag()
+    scan_dir = directory or os.getenv("RAG_INGEST_DIR", "/data/ingest")
+    files = scan_directory(scan_dir)
+    if not files:
+        return {"status": "no_files", "directory": scan_dir, "files": 0}
+    async with _ingest_lock:
+        result = await ingest_files(rag, files, rag_mgr.config.working_dir)
+    return {"status": "ok", "directory": scan_dir, **result}
+
+
+@app.get("/documents/ingest/list")
+async def ingest_list(rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
+    return {"status": "ok", "index": list_index(rag_mgr.config.working_dir)}
+
+
+from app.utils.ingestion import delete_from_index, clear_index
+
+
+@app.post("/documents/ingest/delete")
+async def ingest_delete(files: list[str], rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
+    result = delete_from_index(rag_mgr.config.working_dir, files)
+    return {"status": "ok", **result}
+
+
+@app.post("/documents/ingest/clear")
+async def ingest_clear(rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
+    result = clear_index(rag_mgr.config.working_dir)
+    return {"status": "ok", **result}
+
+
+@app.post("/auth/token", response_model=TokenResponse)
+async def issue_jwt(req: TokenRequest):
+    try:
+        token = issue_token(req.user, {}, role=req.role)
+        return TokenResponse(access_token=token, role=req.role)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 def get_app() -> FastAPI:  # helper for ASGI servers

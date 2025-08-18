@@ -1,9 +1,6 @@
-# LightRAG vs BasicRAG: Comparing RAG Implementations
+# LightRAG: Retrieval-Augmented Generation with Knowledge Graph
 
-This project demonstrates two different implementations of Retrieval-Augmented Generation (RAG) for answering questions about Pydantic AI using its documentation:
-
-1. **BasicRAG**: A traditional RAG implementation using ChromaDB for vector storage and similarity search
-2. **LightRAG**: An advanced, lightweight RAG implementation with enhanced knowledge graph capabilities
+Этот репозиторий теперь сфокусирован ТОЛЬКО на LightRAG реализации (упрощённый и более мощный вариант). Ранее здесь была сравнительная BasicRAG версия — она удалена для уменьшения сложности.
 
 ## Project Goal
 
@@ -14,7 +11,7 @@ The primary goal of this project is to showcase the power and efficiency of Ligh
 - **Knowledge Graph Integration**: LightRAG leverages knowledge graph capabilities for improved context understanding
 - **More Efficient Retrieval**: LightRAG's query mechanism provides more relevant results with less configuration
 
-## Installation
+## Установка
 
 ### Prerequisites
 - Python 3.11+
@@ -24,12 +21,12 @@ The primary goal of this project is to showcase the power and efficiency of Ligh
 
 1. Clone this repository
 
-2. Create a `.env` file in both the `BasicRAG` and `LightRAG` directories (or whichever you want to use) with your OpenAI API key:
+2. Создайте `.env` файл в директории `LightRAG` c вашим OpenAI ключом:
    ```
    OPENAI_API_KEY=your_api_key_here
    ```
 
-3. Set up a virtual environment and install dependencies:
+3. Создайте виртуальное окружение и установите зависимости:
 
    ```bash
    # Create virtual environment
@@ -41,18 +38,14 @@ The primary goal of this project is to showcase the power and efficiency of Ligh
    # macOS/Linux
    source venv/bin/activate
    
-   # Install dependencies for LightRAG
+   # Установка зависимостей LightRAG
    cd LightRAG
-   pip install -r requirements.txt
-   
-   # In a new terminal with activated venv, install BasicRAG dependencies
-   cd BasicRAG
    pip install -r requirements.txt
    ```
 
-## Running the Implementations
+## Запуск
 
-### LightRAG (Most Powerful)
+### LightRAG (CLI)
 
 1. **Insert Documentation** (this will take a while - using full Pydantic AI docs as an example!):
    ```bash
@@ -66,70 +59,46 @@ The primary goal of this project is to showcase the power and efficiency of Ligh
    python rag_agent.py --question "How do I create a Pydantic AI agent?"
    ```
 
-3. **Run the Interactive Streamlit App**:
-   ```bash
-   streamlit run streamlit_app.py
-   ```
-   This provides a chat interface where you can ask questions about Pydantic AI.
+3. (Streamlit UI удалён — используйте CLI или FastAPI сервер.)
 
-### BasicRAG
+## Ключевые особенности
 
-1. **Insert Documentation** (this will take a while - using full Pydantic AI docs as an example!):
-   ```bash
-   cd BasicRAG
-   python insert_pydantic_docs.py
-   ```
-   This will fetch and process the Pydantic AI documentation into ChromaDB with manual chunking.
+- Автоматическая обработка и чанкинг документов
+- Знаниевая графовая структура (knowledge graph) для лучшего контекстного поиска
+- Режимы запросов (naive / local / global / mix / hybrid)
+- Простая интеграция через FastAPI (`api_server.py`)
 
-2. **Run the Agent**:
-   ```bash
-   python rag_agent.py --question "How do I create a Pydantic AI agent?"
-   ```
-   You can customize the number of results from the vector DB with `--n-results 10`.
+## Структура
 
-3. **Run the Interactive Streamlit App**:
-   ```bash
-   streamlit run streamlit_app.py
-   ```
+- `LightRAG/rag_agent.py` — CLI агент
+- `LightRAG/insert_pydantic_docs.py` — загрузка и индексация документации Pydantic AI (адаптируйте под свои файлы)
+- `LightRAG/api_server.py` — FastAPI сервер
+- `LightRAG/start_api.sh` — скрипт запуска
 
-## Key Differences Between Implementations
+## Быстрый запуск API
 
-### Document Processing
-- **BasicRAG**: Manually splits documents into chunks with specified size and overlap, requiring careful tuning
-- **LightRAG**: Automatically handles document processing with intelligent chunking
+```bash
+cd LightRAG
+export OPENAI_API_KEY=sk-... # или в .env
+bash start_api.sh
+```
 
-### Vector Storage
-- **BasicRAG**: Uses ChromaDB directly with manual collection management
-- **LightRAG**: Abstracts storage details behind a clean API with optimized defaults
+Проверка здоровья:
+```bash
+curl -s http://localhost:8000/health
+```
 
-### Query Mechanism
-- **BasicRAG**: Requires specifying the number of results to return
-- **LightRAG**: Uses a more sophisticated query mechanism with different modes (e.g., "naive" or "hybrid")
+Запрос к чату:
+```bash
+curl -s -X POST http://localhost:8000/chat \
+   -H 'Content-Type: application/json' \
+   -d '{"message":"Explain LightRAG architecture briefly"}' | jq
+```
 
-### Code Complexity
-- **BasicRAG**: Requires more boilerplate code for setting up collections and processing documents
-- **LightRAG**: Offers a more concise API with fewer lines of code needed
+## Индексация своих документов
 
-## Project Structure
+Модифицируйте `insert_pydantic_docs.py` или создайте аналогичный скрипт: соберите тексты, вызовите метод вставки (см. пример кода внутри файла) — затем можно задавать вопросы через CLI / API.
 
-### LightRAG
-- `LightRAG/rag_agent.py`: Pydantic AI agent using LightRAG
-- `LightRAG/insert_pydantic_docs.py`: Script to fetch and process documentation
-- `LightRAG/streamlit_app.py`: Interactive web interface
+## Лицензия
 
-### BasicRAG
-- `BasicRAG/rag_agent.py`: Pydantic AI agent using traditional RAG with ChromaDB
-- `BasicRAG/insert_pydantic_docs.py`: Script for document processing with manual chunking
-- `BasicRAG/utils.py`: Utility functions for ChromaDB operations
-- `BasicRAG/streamlit_app.py`: Interactive web interface
-
-## Comparing Performance
-
-To compare the performance of both implementations:
-
-1. Run both Streamlit apps (in separate terminals)
-2. Ask the same questions to both agents
-3. Compare the quality and relevance of responses
-4. Note the differences in response time and accuracy
-
-LightRAG typically provides more contextually relevant answers with less configuration, demonstrating the advantages of its enhanced knowledge graph capabilities and optimized retrieval mechanisms.
+MIT (если требуется другая — обновите этот раздел).

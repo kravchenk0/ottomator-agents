@@ -1,0 +1,101 @@
+version: '3.8'
+
+services:
+  lightrag-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: lightrag-api-prod
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # OpenAI Configuration
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+  - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4.1-mini}
+      - OPENAI_TEMPERATURE=${OPENAI_TEMPERATURE:-0.0}
+      
+      # RAG Configuration
+      - RAG_WORKING_DIR=${RAG_WORKING_DIR:-/app/documents}
+  - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL:-gpt-4.1-mini}
+  - RAG_LLM_MODEL=${RAG_LLM_MODEL:-gpt-4.1-mini}
+      - RAG_RERANK_ENABLED=${RAG_RERANK_ENABLED:-true}
+      - RAG_BATCH_SIZE=${RAG_BATCH_SIZE:-20}
+      - RAG_MAX_DOCS_FOR_RERANK=${RAG_MAX_DOCS_FOR_RERANK:-20}
+      - RAG_CHUNK_SIZE=${RAG_CHUNK_SIZE:-1000}
+      - RAG_CHUNK_OVERLAP=${RAG_CHUNK_OVERLAP:-200}
+      
+      # App Configuration
+      - APP_DEBUG=${APP_DEBUG:-false}
+      - APP_LOG_LEVEL=${APP_LOG_LEVEL:-INFO}
+      - APP_MAX_CONVERSATION_HISTORY=${APP_MAX_CONVERSATION_HISTORY:-100}
+      - APP_ENABLE_STREAMING=${APP_ENABLE_STREAMING:-true}
+      
+      # API Configuration
+      - API_HOST=0.0.0.0
+      - API_PORT=8000
+      - API_CORS_ORIGINS=${API_CORS_ORIGINS:-*}
+      - API_ENABLE_DOCS=${API_ENABLE_DOCS:-false}
+      - API_RATE_LIMIT=${API_RATE_LIMIT:-100}
+      - API_MAX_REQUEST_SIZE=${API_MAX_REQUEST_SIZE:-10MB}
+      
+      # AWS Configuration
+      - AWS_REGION=${AWS_REGION:-us-east-1}
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      
+      # Security
+      - API_SECRET_KEY=${API_SECRET_KEY}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-*}
+      
+    volumes:
+      - ./documents:/app/documents
+      - ./logs:/app/logs
+      - ./config:/app/config
+      
+    networks:
+      - lightrag-network
+      
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+      
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
+      
+  # Optional: Redis for caching and session management
+  redis:
+    image: redis:7-alpine
+    container_name: lightrag-redis-prod
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - lightrag-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+volumes:
+  redis_data:
+    driver: local
+
+networks:
+  lightrag-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16 

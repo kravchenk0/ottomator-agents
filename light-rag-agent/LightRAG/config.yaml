@@ -1,0 +1,40 @@
+openai:
+  api_key: "${OPENAI_API_KEY}"
+  model: "gpt-4.1-mini"
+  temperature: 0.0
+  max_tokens: null
+
+rag:
+  working_dir: "./documents"
+  embedding_model: "gpt-4.1-mini"
+  llm_model: "gpt-4.1-mini"
+  rerank_enabled: true
+  batch_size: 20
+  max_docs_for_rerank: 20
+  chunk_size: 1000
+  chunk_overlap: 200
+
+app:
+  debug: false
+  log_level: "INFO"
+  max_conversation_history: 100
+  enable_streaming: true
+
+api:
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins: ["*"]
+  enable_docs: true
+  rate_limit: 100  # requests per minute
+  max_request_size: "10MB"
+
+lovable:
+  integration_enabled: true
+  webhook_url: ""
+  api_key: ""
+  default_system_prompt: |
+    You are a helpful AI assistant integrated with a website. 
+    Always use the retrieve tool to find relevant information before answering. 
+    Provide clear, concise responses suitable for web chat. 
+    If you don't have enough information, ask clarifying questions.
+    Format responses in a user-friendly way with clear structure. 

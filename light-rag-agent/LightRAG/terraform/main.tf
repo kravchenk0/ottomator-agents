@@ -1,0 +1,177 @@
+terraform {
+  required_version = ">= 1.0"
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region = var.aws_region
+}
+
+# VPC and Networking
+resource "aws_vpc" "lightrag_vpc" {
+  cidr_block           = var.vpc_cidr
+  enable_dns_hostnames = true
+  enable_dns_support   = true
+
+  tags = {
+    Name = "${var.project_name}-vpc"
+  }
+}
+
+resource "aws_subnet" "lightrag_subnet" {
+  vpc_id            = aws_vpc.lightrag_vpc.id
+  cidr_block        = var.subnet_cidr
+  availability_zone = var.availability_zone
+
+  tags = {
+    Name = "${var.project_name}-subnet"
+  }
+}
+
+resource "aws_internet_gateway" "lightrag_igw" {
+  vpc_id = aws_vpc.lightrag_vpc.id
+
+  tags = {
+    Name = "${var.project_name}-igw"
+  }
+}
+
+resource "aws_route_table" "lightrag_rt" {
+  vpc_id = aws_vpc.lightrag_vpc.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.lightrag_igw.id
+  }
+
+  tags = {
+    Name = "${var.project_name}-rt"
+  }
+}
+
+resource "aws_route_table_association" "lightrag_rta" {
+  subnet_id      = aws_subnet.lightrag_subnet.id
+  route_table_id = aws_route_table.lightrag_rt.id
+}
+
+# Security Group
+resource "aws_security_group" "lightrag_sg" {
+  name        = "${var.project_name}-sg"
+  description = "Security group for LightRAG API"
+  vpc_id      = aws_vpc.lightrag_vpc.id
+
+  ingress {
+    description = "SSH"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    description = "LightRAG API"
+    from_port   = 8000
+    to_port     = 8000
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "${var.project_name}-sg"
+  }
+}
+
+# Key Pair
+resource "aws_key_pair" "lightrag_key" {
+  key_name   = "${var.project_name}-key"
+  public_key = file(var.ssh_public_key_path)
+}
+
+# EC2 Instance
+resource "aws_instance" "lightrag_instance" {
+  ami                    = var.ami_id
+  instance_type          = var.instance_type
+  key_name              = aws_key_pair.lightrag_key.key_name
+  vpc_security_group_ids = [aws_security_group.lightrag_sg.id]
+  subnet_id              = aws_subnet.lightrag_subnet.id
+  associate_public_ip    = true
+
+  root_block_device {
+    volume_size = var.volume_size
+    volume_type = "gp3"
+  }
+
+  user_data = base64encode(templatefile("${path.module}/user_data.sh", {
+    project_name = var.project_name
+  }))
+
+  tags = {
+    Name = "${var.project_name}-instance"
+  }
+
+  depends_on = [aws_internet_gateway.lightrag_igw]
+}
+
+# Elastic IP
+resource "aws_eip" "lightrag_eip" {
+  instance = aws_instance.lightrag_instance.id
+  domain   = "vpc"
+
+  tags = {
+    Name = "${var.project_name}-eip"
+  }
+}
+
+# Outputs
+output "instance_id" {
+  description = "ID of the EC2 instance"
+  value       = aws_instance.lightrag_instance.id
+}
+
+output "public_ip" {
+  description = "Public IP address of the EC2 instance"
+  value       = aws_eip.lightrag_eip.public_ip
+}
+
+output "ssh_command" {
+  description = "SSH command to connect to the instance"
+  value       = "ssh -i ${var.ssh_private_key_path} ec2-user@${aws_eip.lightrag_eip.public_ip}"
+}
+
+output "api_endpoint" {
+  description = "API endpoint URL"
+  value       = "http://${aws_eip.lightrag_eip.public_ip}:8000"
+}
+
+output "health_check_url" {
+  description = "Health check URL"
+  value       = "http://${aws_eip.lightrag_eip.public_ip}:8000/health"
+} 

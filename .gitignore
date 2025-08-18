@@ -5,3 +5,10 @@ __pycache__
 chroma_db
 .gradio
 .langgraph_api
+light-rag-agent/.venv311/*
+
+
+.DS_Store
+light-rag-agent/LightRAG/.venv/*
+light-rag-agent/LightRAG/.venv311/*
+

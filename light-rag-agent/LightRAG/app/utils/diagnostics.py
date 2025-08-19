@@ -41,17 +41,34 @@ async def self_test_model(prompt: str = "ping", max_output_tokens: int = 32) -> 
 				max_output_tokens = ov
 		except ValueError:
 			logger.debug("Invalid SELF_TEST_MAX_OUTPUT_TOKENS, ignoring")
+
+	def _unsupported_temperature(err: Exception | str) -> bool:
+		msg = str(err)
+		return "Unsupported parameter" in msg and "temperature" in msg
+
 	tried: List[str] = []
 	last_error: Optional[str] = None
 	for model in chain:
 		tried.append(model)
 		try:
-			resp = await client.responses.create(
-				model=model,
-				input=prompt,
-				max_output_tokens=max_output_tokens,
-				temperature=temperature,
-			)
+			# Первичный вызов с temperature
+			try:
+				resp = await client.responses.create(
+					model=model,
+					input=prompt,
+					max_output_tokens=max_output_tokens,
+					temperature=temperature,
+				)
+			except Exception as e1:  # noqa: BLE001
+				if _unsupported_temperature(e1):
+					logger.warning(f"self_test_model: retry without temperature for model '{model}'")
+					resp = await client.responses.create(
+						model=model,
+						input=prompt,
+						max_output_tokens=max_output_tokens,
+					)
+				else:
+					raise
 			text = resp.output_text or ""
 			return {"ok": True, "model": model, "text_preview": text[:120], "tried": tried}
 		except Exception as e:  # noqa: BLE001

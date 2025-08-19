@@ -7,42 +7,26 @@ set -e
 
 #!/bin/bash
 set -e
-LOG_FILE=/var/log/lightrag-user-data.log
-echo "[stub] start" | tee -a "$LOG_FILE"
-cat > /etc/profile.d/lightrag_env.sh <<EOF
-export OPENAI_API_KEY="${OPENAI_API_KEY}"
-export OPENAI_MODEL="${OPENAI_MODEL}"
-export OPENAI_TEMPERATURE="${OPENAI_TEMPERATURE}"
-export RAG_WORKING_DIR="${RAG_WORKING_DIR}"
-export RAG_EMBEDDING_MODEL="${RAG_EMBEDDING_MODEL}"
-export RAG_LLM_MODEL="${RAG_LLM_MODEL}"
-export RAG_RERANK_ENABLED="${RAG_RERANK_ENABLED}"
-export RAG_BATCH_SIZE="${RAG_BATCH_SIZE}"
-export RAG_MAX_DOCS_FOR_RERANK="${RAG_MAX_DOCS_FOR_RERANK}"
-export RAG_CHUNK_SIZE="${RAG_CHUNK_SIZE}"
-export RAG_CHUNK_OVERLAP="${RAG_CHUNK_OVERLAP}"
-export APP_DEBUG="${APP_DEBUG}"
-export APP_LOG_LEVEL="${APP_LOG_LEVEL}"
-export APP_MAX_CONVERSATION_HISTORY="${APP_MAX_CONVERSATION_HISTORY}"
-export APP_ENABLE_STREAMING="${APP_ENABLE_STREAMING}"
-export API_HOST="${API_HOST}"
-export API_PORT="${API_PORT}"
-export API_CORS_ORIGINS="${API_CORS_ORIGINS}"
-export API_ENABLE_DOCS="${API_ENABLE_DOCS}"
-export API_RATE_LIMIT="${API_RATE_LIMIT}"
-export API_MAX_REQUEST_SIZE="${API_MAX_REQUEST_SIZE}"
-export API_SECRET_KEY="${API_SECRET_KEY}"
-export CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS}"
-export GITHUB_TOKEN="${GITHUB_TOKEN}"
-EOF
+LF=/var/log/lightrag-user-data.log;echo "[stub] start"|tee -a "$LF"
+# Экспорт env в один heredoc (минимум символов)
+cat >/etc/profile.d/lightrag_env.sh <<E
+export OPENAI_API_KEY='${OPENAI_API_KEY}' OPENAI_MODEL='${OPENAI_MODEL}' OPENAI_TEMPERATURE='${OPENAI_TEMPERATURE}' \
+RAG_WORKING_DIR='${RAG_WORKING_DIR}' RAG_EMBEDDING_MODEL='${RAG_EMBEDDING_MODEL}' RAG_LLM_MODEL='${RAG_LLM_MODEL}' \
+RAG_RERANK_ENABLED='${RAG_RERANK_ENABLED}' RAG_BATCH_SIZE='${RAG_BATCH_SIZE}' RAG_MAX_DOCS_FOR_RERANK='${RAG_MAX_DOCS_FOR_RERANK}' \
+RAG_CHUNK_SIZE='${RAG_CHUNK_SIZE}' RAG_CHUNK_OVERLAP='${RAG_CHUNK_OVERLAP}' APP_DEBUG='${APP_DEBUG}' APP_LOG_LEVEL='${APP_LOG_LEVEL}' \
+APP_MAX_CONVERSATION_HISTORY='${APP_MAX_CONVERSATION_HISTORY}' APP_ENABLE_STREAMING='${APP_ENABLE_STREAMING}' API_HOST='${API_HOST}' \
+API_PORT='${API_PORT}' API_CORS_ORIGINS='${API_CORS_ORIGINS}' API_ENABLE_DOCS='${API_ENABLE_DOCS}' API_RATE_LIMIT='${API_RATE_LIMIT}' \
+API_MAX_REQUEST_SIZE='${API_MAX_REQUEST_SIZE}' API_SECRET_KEY='${API_SECRET_KEY}' CORS_ALLOWED_ORIGINS='${CORS_ALLOWED_ORIGINS}' \
+GITHUB_TOKEN='${GITHUB_TOKEN}'
+E
 . /etc/profile.d/lightrag_env.sh || true
-yum install -y git curl >/dev/null 2>&1 || yum install -y git curl
-cd /home/ec2-user
-if [ -z "$GITHUB_TOKEN" ]; then echo "[stub][ERROR] GITHUB_TOKEN missing" | tee -a "$LOG_FILE"; exit 1; fi
-git clone https://$GITHUB_TOKEN@github.com/kravchenk0/ottomator-agents.git || echo "[stub] repo exists maybe"
+yum install -y git curl >/dev/null 2>&1 || true
+cd /home/ec2-user || exit 1
+[ -z "$GITHUB_TOKEN" ] && echo "[stub][ERR] no GITHUB_TOKEN"|tee -a "$LF" && exit 1
+git clone https://$GITHUB_TOKEN@github.com/kravchenk0/ottomator-agents.git 2>>$LF || echo "[stub] clone skipped"|tee -a "$LF"
 chown -R ec2-user:ec2-user ottomator-agents || true
-bash /home/ec2-user/ottomator-agents/light-rag-agent/LightRAG/terraform/bootstrap.sh >> "$LOG_FILE" 2>&1 &
-echo "[stub] bootstrap started (pid=$!)" | tee -a "$LOG_FILE"
+bash /home/ec2-user/ottomator-agents/light-rag-agent/LightRAG/terraform/bootstrap.sh >>$LF 2>&1 &
+echo "[stub] bootstrap pid=$!"|tee -a "$LF"
   if [ -S /var/run/docker.sock ]; then
     chgrp docker /var/run/docker.sock || true
     chmod 660 /var/run/docker.sock || true

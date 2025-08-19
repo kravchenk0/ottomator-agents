@@ -6,7 +6,7 @@ variable "github_token" {
 variable "aws_region" {
   description = "AWS region"
   type        = string
-  default     = "eu-north-1"
+  default     = "me-south-1"
 }
 
 variable "project_name" {
@@ -30,7 +30,7 @@ variable "subnet_cidr" {
 variable "availability_zone" {
   description = "Availability zone"
   type        = string
-  default     = "eu-north-1a"
+  default     = "me-south-1a"
 }
 
 variable "instance_type" {

@@ -129,31 +129,31 @@ resource "aws_instance" "lightrag_instance" {
   }
 
   user_data = base64encode(templatefile("${path.module}/user_data.sh", {
-    project_name              = var.project_name
-    OPENAI_API_KEY            = var.openai_api_key
-  OPENAI_MODEL              = "gpt-5-mini"
-    OPENAI_TEMPERATURE        = 0.0
-    RAG_WORKING_DIR           = "/app/documents"
-  RAG_EMBEDDING_MODEL       = "gpt-5-mini"
-  RAG_LLM_MODEL             = "gpt-5-mini"
-    RAG_RERANK_ENABLED        = true
-    RAG_BATCH_SIZE            = 20
-    RAG_MAX_DOCS_FOR_RERANK   = 20
-    RAG_CHUNK_SIZE            = 1000
-    RAG_CHUNK_OVERLAP         = 200
-    APP_DEBUG                 = false
-    APP_LOG_LEVEL             = "INFO"
+    project_name                = var.project_name
+    OPENAI_API_KEY              = var.openai_api_key
+    OPENAI_MODEL                = "gpt-5-mini"
+    OPENAI_TEMPERATURE          = 0.0
+    RAG_WORKING_DIR             = "/app/documents"
+    RAG_EMBEDDING_MODEL         = "gpt-5-mini"
+    RAG_LLM_MODEL               = "gpt-5-mini"
+    RAG_RERANK_ENABLED          = true
+    RAG_BATCH_SIZE              = 20
+    RAG_MAX_DOCS_FOR_RERANK     = 20
+    RAG_CHUNK_SIZE              = 1000
+    RAG_CHUNK_OVERLAP           = 200
+    APP_DEBUG                   = false
+    APP_LOG_LEVEL               = "INFO"
     APP_MAX_CONVERSATION_HISTORY = 100
-    APP_ENABLE_STREAMING      = true
-    API_HOST                  = "0.0.0.0"
-    API_PORT                  = 8000
-    API_CORS_ORIGINS          = "*"
-    API_ENABLE_DOCS           = false
-    API_RATE_LIMIT            = 100
-    API_MAX_REQUEST_SIZE      = "10MB"
-    API_SECRET_KEY            = var.rag_jwt_secret
-    CORS_ALLOWED_ORIGINS      = "*"
-    GITHUB_TOKEN              = var.github_token
+    APP_ENABLE_STREAMING        = true
+    API_HOST                    = "0.0.0.0"
+    API_PORT                    = 8000
+    API_CORS_ORIGINS            = "*"
+    API_ENABLE_DOCS             = false
+    API_RATE_LIMIT              = 100
+    API_MAX_REQUEST_SIZE        = "10MB"
+    API_SECRET_KEY              = var.rag_jwt_secret
+    CORS_ALLOWED_ORIGINS        = "*"
+    GITHUB_TOKEN                = var.github_token
   }))
 
   tags = {

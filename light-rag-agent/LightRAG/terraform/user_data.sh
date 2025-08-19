@@ -5,27 +5,88 @@
 
 set -e
 
+# Функции утилиты
+log() { echo "[user_data] $1" | tee -a /var/log/lightrag-user-data.log; }
+fail() { log "[ERROR] $1"; }
+
+retry() {
+  local attempts=$1; shift
+  local delay=$1; shift
+  local cmd="$@"
+  local n=1
+  while true; do
+    eval "$cmd" && return 0 || {
+      if [ $n -lt $attempts ]; then
+        log "retry($n/$attempts) cmd failed: $cmd"; sleep $delay; n=$((n+1));
+      else
+        return 1
+      fi
+    }
+  done
+}
+
 # Update system
 yum update -y
 
 # Install required packages
-yum install -y docker git curl wget
+yum install -y docker git curl wget acl
 
 # Start and enable Docker
-systemctl start docker
 systemctl enable docker
 
-# Add ec2-user to docker group
+# Гарантируем наличие группы docker
+if ! getent group docker >/dev/null 2>&1; then
+  groupadd docker
+fi
 
-# Добавляем ec2-user в группу docker и применяем изменения
-usermod -a -G docker ec2-user
-newgrp docker <<EONG
-echo "ec2-user теперь в группе docker"
-EONG
+# Добавляем ec2-user в группу docker (если ещё не)
+if ! id -nG ec2-user | grep -q '\bdocker\b'; then
+  usermod -aG docker ec2-user
+fi
 
-# Install Docker Compose
-curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-chmod +x /usr/local/bin/docker-compose
+# Конфигурируем daemon для использования группы docker
+mkdir -p /etc/docker
+cat > /etc/docker/daemon.json <<'DOCKERCFG'
+{ "group": "docker" }
+DOCKERCFG
+
+systemctl restart docker
+
+# Дожидаемся появления сокета и выставляем права (немедленный доступ без relogin через ACL)
+for i in {1..15}; do
+  if [ -S /var/run/docker.sock ]; then
+    chgrp docker /var/run/docker.sock || true
+    chmod 660 /var/run/docker.sock || true
+    setfacl -m u:ec2-user:rw /var/run/docker.sock || true
+    break
+  fi
+  sleep 1
+done
+
+echo "[user_data] docker socket perms:" $(ls -l /var/run/docker.sock 2>/dev/null || echo 'not-found') >> /var/log/lightrag-user-data.log
+
+log "Install Docker Compose (CLI plugin)"
+COMPOSE_URL_BASE="https://github.com/docker/compose/releases/download"
+COMPOSE_VERSION="v2.27.0"
+mkdir -p /usr/local/lib/docker/cli-plugins
+if retry 3 5 "curl -fsSL $COMPOSE_URL_BASE/$COMPOSE_VERSION/docker-compose-$(uname -s)-$(uname -m) -o /usr/local/lib/docker/cli-plugins/docker-compose"; then
+  chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+  ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose || true
+  log "Docker Compose plugin installed"
+else
+  fail "Compose binary install failed, fallback to pip"
+  if command -v python3 >/dev/null 2>&1; then
+    python3 -m ensurepip --upgrade || true
+    retry 3 5 "python3 -m pip install --upgrade pip" || true
+    if retry 2 5 "python3 -m pip install docker-compose"; then
+      ln -sf $(command -v docker-compose) /usr/local/bin/docker-compose || true
+      log "docker-compose (pip) installed"
+    else
+      fail "pip docker-compose install failed; продолжим попытку без compose"
+    fi
+  fi
+fi
+command -v docker-compose && docker-compose version || log "Compose not available yet"
 
 # Create application directory
 mkdir -p /home/ec2-user/lightrag
@@ -84,6 +145,32 @@ git clone https://$GITHUB_TOKEN@github.com/kravchenk0/ottomator-agents.git
 # Копируем исходники целиком (упрощаем логику) в рабочую директорию сборки
 RSYNC_SRC="/home/ec2-user/ottomator-agents/light-rag-agent/LightRAG"
 cp -r $RSYNC_SRC/* /home/ec2-user/lightrag/
+cd /home/ec2-user/lightrag || { echo "[user_data][ERROR] cannot cd to workdir" >> /var/log/lightrag-user-data.log; exit 1; }
+log "Содержимое рабочего каталога после копирования (top 30)"; ls -al | head -n 30 >> /var/log/lightrag-user-data.log 2>&1 || true
+
+# Верифицируем наличие Dockerfile (иногда может не скопироваться из-за временных задержек FS)
+if [ ! -f /home/ec2-user/lightrag/Dockerfile ]; then
+  if [ -f "$RSYNC_SRC/Dockerfile" ]; then
+    cp "$RSYNC_SRC/Dockerfile" /home/ec2-user/lightrag/
+    log "Dockerfile восстановлен из исходников"
+  else
+    log "[WARN] Dockerfile отсутствует, создаём минимальный"
+    cat > /home/ec2-user/lightrag/Dockerfile <<'MINIDOCK'
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt . || true
+RUN pip install --no-cache-dir --upgrade pip && \
+    ( [ -f requirements.txt ] && pip install --no-cache-dir -r requirements.txt || true )
+COPY . .
+CMD ["python","-m","http.server","8000"]
+MINIDOCK
+  fi
+fi
+
+# Создаём requirements.txt если вдруг отсутствует (для мини-докерфайла)
+if [ ! -f /home/ec2-user/lightrag/requirements.txt ]; then
+  echo "fastapi\nuvicorn" > /home/ec2-user/lightrag/requirements.txt
+fi
 
 # Убедимся что структура корректна и файл monkey_patch_lightrag.py лежит в корне (для import из app)
 if [ ! -f /home/ec2-user/lightrag/monkey_patch_lightrag.py ]; then
@@ -93,7 +180,7 @@ if [ ! -f /home/ec2-user/lightrag/monkey_patch_lightrag.py ]; then
   fi
 fi
 
-# Создаём docker-compose (едиственный вариант, убираем дубли)
+# Создаём docker-compose (актуальная версия с environment mapping)
 cat > docker-compose.prod.yml << 'EOF'
 version: '3.8'
 
@@ -105,29 +192,31 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - OPENAI_MODEL=${OPENAI_MODEL}
-      - OPENAI_TEMPERATURE=${OPENAI_TEMPERATURE}
-      - RAG_WORKING_DIR=${RAG_WORKING_DIR}
-      - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL}
-      - RAG_LLM_MODEL=${RAG_LLM_MODEL}
-      - RAG_RERANK_ENABLED=${RAG_RERANK_ENABLED}
-      - RAG_BATCH_SIZE=${RAG_BATCH_SIZE}
-      - RAG_MAX_DOCS_FOR_RERANK=${RAG_MAX_DOCS_FOR_RERANK}
-      - RAG_CHUNK_SIZE=${RAG_CHUNK_SIZE}
-      - RAG_CHUNK_OVERLAP=${RAG_CHUNK_OVERLAP}
-      - APP_DEBUG=${APP_DEBUG}
-      - APP_LOG_LEVEL=${APP_LOG_LEVEL}
-      - APP_MAX_CONVERSATION_HISTORY=${APP_MAX_CONVERSATION_HISTORY}
-      - APP_ENABLE_STREAMING=${APP_ENABLE_STREAMING}
-      - API_HOST=${API_HOST}
-      - API_PORT=${API_PORT}
-      - API_CORS_ORIGINS=${API_CORS_ORIGINS}
-      - API_ENABLE_DOCS=${API_ENABLE_DOCS}
-      - API_RATE_LIMIT=${API_RATE_LIMIT}
-      - API_MAX_REQUEST_SIZE=${API_MAX_REQUEST_SIZE}
-      - API_SECRET_KEY=${API_SECRET_KEY}
-      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_MODEL: ${OPENAI_MODEL}
+      OPENAI_TEMPERATURE: ${OPENAI_TEMPERATURE}
+      RAG_WORKING_DIR: ${RAG_WORKING_DIR}
+      RAG_EMBEDDING_MODEL: ${RAG_EMBEDDING_MODEL}
+      RAG_LLM_MODEL: ${RAG_LLM_MODEL}
+      RAG_RERANK_ENABLED: ${RAG_RERANK_ENABLED}
+      RAG_BATCH_SIZE: ${RAG_BATCH_SIZE}
+      RAG_MAX_DOCS_FOR_RERANK: ${RAG_MAX_DOCS_FOR_RERANK}
+      RAG_CHUNK_SIZE: ${RAG_CHUNK_SIZE}
+      RAG_CHUNK_OVERLAP: ${RAG_CHUNK_OVERLAP}
+      APP_DEBUG: ${APP_DEBUG}
+      APP_LOG_LEVEL: ${APP_LOG_LEVEL}
+      APP_MAX_CONVERSATION_HISTORY: ${APP_MAX_CONVERSATION_HISTORY}
+      APP_ENABLE_STREAMING: ${APP_ENABLE_STREAMING}
+      API_HOST: ${API_HOST}
+      API_PORT: ${API_PORT}
+      API_CORS_ORIGINS: ${API_CORS_ORIGINS}
+      API_ENABLE_DOCS: ${API_ENABLE_DOCS}
+      API_RATE_LIMIT: ${API_RATE_LIMIT}
+      API_MAX_REQUEST_SIZE: ${API_MAX_REQUEST_SIZE}
+      API_SECRET_KEY: ${API_SECRET_KEY}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     volumes:
       - ./documents:/app/documents
       - ./logs:/app/logs
@@ -138,14 +227,6 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-          cpus: '2.0'
-        reservations:
-          memory: 1G
-          cpus: '1.0'
 
   redis:
     image: redis:7-alpine
@@ -166,46 +247,70 @@ volumes:
     driver: local
 EOF
 
+# Логируем первые строки docker-compose для диагностики
+head -n 60 docker-compose.prod.yml >> /var/log/lightrag-user-data.log 2>&1 || true
+
 #############################
 # Сборка образа и запуск
 #############################
-docker build -t lightrag-api:latest .
-docker images | grep lightrag-api || echo "[user_data][ERROR] Образ не собран" >> /var/log/lightrag-user-data.log
-
-docker compose -f docker-compose.prod.yml up -d || /usr/local/bin/docker-compose -f docker-compose.prod.yml up -d
+log "START build"
+ if docker build -t lightrag-api:latest . >> /var/log/lightrag-user-data.log 2>&1; then
+   echo "[user_data] build OK" >> /var/log/lightrag-user-data.log
+ else
+   echo "[user_data][ERROR] build failed" >> /var/log/lightrag-user-data.log
+ fi
+ 
+ if docker images | grep -q lightrag-api; then
+   echo "[user_data] image present" >> /var/log/lightrag-user-data.log
+ else
+   echo "[user_data][ERROR] image missing after build" >> /var/log/lightrag-user-data.log
+ fi
+ 
+log "docker compose up"
+if command -v docker compose >/dev/null 2>&1; then
+  docker compose -f docker-compose.prod.yml up -d >> /var/log/lightrag-user-data.log 2>&1 || fail "docker compose (plugin) up failed"
+elif command -v docker-compose >/dev/null 2>&1; then
+  docker-compose -f docker-compose.prod.yml up -d >> /var/log/lightrag-user-data.log 2>&1 || fail "docker-compose (standalone) up failed"
+else
+  fail "Compose not installed; skipping container start"
+fi
+ 
+log "containers after up:"; docker ps -a >> /var/log/lightrag-user-data.log 2>&1 || true
 
 # Ожидание health (до 60 сек)
 echo "Ждём readiness API..." >> /var/log/lightrag-user-data.log
 for i in {1..30}; do
   if curl -sf http://localhost:8000/health > /dev/null; then
-    echo "API готов" >> /var/log/lightrag-user-data.log
-    break
-  fi
-  sleep 2
-done
-
-# Создаём systemd unit после успешной первичной инициализации
-cat > /etc/systemd/system/lightrag.service << 'EOF'
-[Unit]
-Description=LightRAG API Service
-After=docker.service
-Requires=docker.service
-
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-WorkingDirectory=/home/ec2-user/lightrag
-ExecStart=/usr/local/bin/docker-compose -f docker-compose.prod.yml up -d
-ExecStop=/usr/local/bin/docker-compose -f docker-compose.prod.yml down
-User=ec2-user
-Group=ec2-user
-
-[Install]
-WantedBy=multi-user.target
+    environment:
+      OPENAI_API_KEY: $OPENAI_API_KEY
+      OPENAI_MODEL: $OPENAI_MODEL
+      OPENAI_TEMPERATURE: $OPENAI_TEMPERATURE
+      RAG_WORKING_DIR: $RAG_WORKING_DIR
+      RAG_EMBEDDING_MODEL: $RAG_EMBEDDING_MODEL
+      RAG_LLM_MODEL: $RAG_LLM_MODEL
+      RAG_RERANK_ENABLED: $RAG_RERANK_ENABLED
+      RAG_BATCH_SIZE: $RAG_BATCH_SIZE
+      RAG_MAX_DOCS_FOR_RERANK: $RAG_MAX_DOCS_FOR_RERANK
+      RAG_CHUNK_SIZE: $RAG_CHUNK_SIZE
+      RAG_CHUNK_OVERLAP: $RAG_CHUNK_OVERLAP
+      APP_DEBUG: $APP_DEBUG
+      APP_LOG_LEVEL: $APP_LOG_LEVEL
+      APP_MAX_CONVERSATION_HISTORY: $APP_MAX_CONVERSATION_HISTORY
+      APP_ENABLE_STREAMING: $APP_ENABLE_STREAMING
+      API_HOST: $API_HOST
+      API_PORT: $API_PORT
+      API_CORS_ORIGINS: $API_CORS_ORIGINS
+      API_ENABLE_DOCS: $API_ENABLE_DOCS
+      API_RATE_LIMIT: $API_RATE_LIMIT
+      API_MAX_REQUEST_SIZE: $API_MAX_REQUEST_SIZE
+      API_SECRET_KEY: $API_SECRET_KEY
+      CORS_ALLOWED_ORIGINS: $CORS_ALLOWED_ORIGINS
 EOF
 
 systemctl enable lightrag.service
 systemctl start lightrag.service || echo "[user_data][WARN] systemd старт не критичен (контейнер уже запущен)" >> /var/log/lightrag-user-data.log
+ 
+log "final docker ps:"; docker ps -a >> /var/log/lightrag-user-data.log 2>&1 || true
 
 
 
@@ -236,5 +341,19 @@ chmod +x /home/ec2-user/health_check.sh
 # Create a startup log
 echo "LightRAG instance setup completed at $(date)" > /home/ec2-user/setup.log
 
-# Reboot to ensure all changes take effect
-# reboot 
+log "START build (pwd=$(pwd))"
+if [ ! -f Dockerfile ]; then
+  log "[WARN] Dockerfile не найден перед сборкой, вывод ls:"; ls -al >> /var/log/lightrag-user-data.log 2>&1 || true
+fi
+if docker build -t lightrag-api:latest . >> /var/log/lightrag-user-data.log 2>&1; then
+  echo "[user_data] build OK" >> /var/log/lightrag-user-data.log
+else
+  echo "[user_data][ERROR] build failed" >> /var/log/lightrag-user-data.log
+  find . -maxdepth 3 -type f -name 'Dockerfile' >> /var/log/lightrag-user-data.log 2>&1 || true
+fi
+
+if docker images | grep -q lightrag-api; then
+  echo "[user_data] image present" >> /var/log/lightrag-user-data.log
+else
+  echo "[user_data][ERROR] image missing after build" >> /var/log/lightrag-user-data.log
+fi

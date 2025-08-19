@@ -9,7 +9,8 @@ terraform {
 }
 
 provider "aws" {
-  region = var.aws_region
+  region  = var.aws_region
+  profile = var.aws_profile
 }
 
 # Latest Amazon Linux 2 kernel 5.10 x86_64 AMI via public SSM parameter (region-specific automatically).

@@ -9,6 +9,12 @@ variable "aws_region" {
   default     = "me-south-1"
 }
 
+variable "aws_profile" {
+  description = "AWS shared config credential profile name (from ~/.aws/credentials)."
+  type        = string
+  default     = "default"
+}
+
 variable "project_name" {
   description = "Name of the project"
   type        = string

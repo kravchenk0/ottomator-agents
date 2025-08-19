@@ -85,6 +85,7 @@ class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     user_id: Optional[str] = None
     system_prompt: Optional[str] = None
+    model: Optional[str] = None  # запрошенная модель (опционально)
 
 
 class ChatResponse(BaseModel):
@@ -92,6 +93,7 @@ class ChatResponse(BaseModel):
     conversation_id: str
     sources: Optional[list] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    error: Optional[str] = None  # текст ошибки, если запрос завершился неуспешно
 
 
 class HealthResponse(BaseModel):
@@ -201,39 +203,73 @@ async def health_check():
 
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
+    performance_logger.start_timer("chat_request")
+    conv_id = request.conversation_id or f"conv_{hash(request.message) % 10000}"
+    current_prompt = request.system_prompt or system_prompt
+    global _create_agent, _RAGDeps
     try:
-        performance_logger.start_timer("chat_request")
-        conv_id = request.conversation_id or f"conv_{hash(request.message) % 10000}"
-        current_prompt = request.system_prompt or system_prompt
-        global _create_agent, _RAGDeps
+        # (re)init agent factory if needed
         if _create_agent is None or _RAGDeps is None:
             if os.getenv("OPENAI_API_KEY"):
                 from app.agent.rag_agent import create_agent as _ca, RAGDeps as _rd
                 _create_agent, _RAGDeps = _ca, _rd
             else:
-                raise HTTPException(status_code=503, detail="RAG/Agent unavailable: no API key")
-        agent = _create_agent(current_prompt)
+                return ChatResponse(
+                    response="",
+                    conversation_id=conv_id,
+                    error="RAG/Agent unavailable: no OPENAI_API_KEY",
+                    metadata={"stage": "init"},
+                )
+        # создаём агент: не перепутать model/system_prompt (используем именованные аргументы)
+        agent = _create_agent(model=request.model, system_prompt=current_prompt)
         deps = _RAGDeps(rag_manager=rag_mgr)
-        result = await agent.run(request.message, deps=deps)
         try:
-            sources = getattr(result, 'metadata', {}).get('sources') if getattr(result, 'metadata', None) else None
-        except Exception:  # noqa: BLE001
-            sources = None
+            result = await agent.run(request.message, deps=deps)
+            try:
+                sources = getattr(result, 'metadata', {}).get('sources') if getattr(result, 'metadata', None) else None
+            except Exception:  # noqa: BLE001
+                sources = None
+            performance_logger.end_timer("chat_request")
+            performance_logger.log_metric("messages_processed", 1, "msg")
+            return ChatResponse(
+                response=result.data,
+                conversation_id=conv_id,
+                sources=sources,
+                metadata={
+                    "user_id": request.user_id,
+                    "model": request.model or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL"),
+                    "system_prompt_used": (current_prompt[:100] + "...") if current_prompt and len(current_prompt) > 100 else current_prompt,
+                    "processing_time": performance_logger.get_summary().get("chat_request", 0),
+                },
+            )
+        except Exception as run_err:  # noqa: BLE001
+            performance_logger.end_timer("chat_request")
+            err_str = str(run_err)
+            # Попытка классифицировать
+            if "model_not_found" in err_str or "does not exist" in err_str:
+                code = "MODEL_NOT_FOUND"
+            elif "rate limit" in err_str.lower():
+                code = "RATE_LIMIT"
+            else:
+                code = "EXECUTION_ERROR"
+            return ChatResponse(
+                response="",
+                conversation_id=conv_id,
+                error=f"{code}: {err_str}",
+                metadata={
+                    "user_id": request.user_id,
+                    "model": request.model or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL"),
+                    "processing_time": performance_logger.get_summary().get("chat_request", 0),
+                },
+            )
+    except Exception as outer:  # noqa: BLE001
         performance_logger.end_timer("chat_request")
-        performance_logger.log_metric("messages_processed", 1, "msg")
         return ChatResponse(
-            response=result.data,
+            response="",
             conversation_id=conv_id,
-            sources=sources,
-            metadata={
-                "user_id": request.user_id,
-                "system_prompt_used": (current_prompt[:100] + "...") if current_prompt and len(current_prompt) > 100 else current_prompt,
-                "processing_time": performance_logger.get_summary().get("chat_request", 0),
-            },
+            error=f"INIT_ERROR: {outer}",
+            metadata={"stage": "outer"},
         )
-    except Exception as e:  # noqa: BLE001
-        performance_logger.end_timer("chat_request")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
 
 
 @app.post("/config", response_model=Dict[str, Any])

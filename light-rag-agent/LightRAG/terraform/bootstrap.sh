@@ -38,6 +38,32 @@ if [ ! -d /home/ec2-user/ottomator-agents ]; then
 fi
 SRC=/home/ec2-user/ottomator-agents/light-rag-agent/LightRAG
 cp -r $SRC/* "$WORKDIR" || fail "copy sources"
+# Создаём скрипт обновления кода (git pull + rsync + rebuild)
+cat > /usr/local/bin/lightrag-update.sh <<'UPD'
+#!/bin/bash
+set -e
+LOG=/var/log/lightrag-update.log
+echo "[update] start $(date)" | tee -a "$LOG"
+REPO_DIR=/home/ec2-user/ottomator-agents
+RUNTIME_DIR=/home/ec2-user/lightrag
+if [ ! -d "$REPO_DIR/.git" ]; then
+  echo "[update] repo missing at $REPO_DIR" | tee -a "$LOG"; exit 1
+fi
+cd "$REPO_DIR"
+if [ -n "$GITHUB_TOKEN" ]; then
+  CUR_URL=$(git remote get-url origin || echo '')
+  if ! echo "$CUR_URL" | grep -q "$GITHUB_TOKEN"; then
+    git remote set-url origin "https://$GITHUB_TOKEN@github.com/kravchenk0/ottomator-agents.git" || true
+  fi
+fi
+git pull 2>&1 | tee -a "$LOG" || { echo "[update] git pull failed" | tee -a "$LOG"; exit 1; }
+rsync -a --delete $REPO_DIR/light-rag-agent/LightRAG/ "$RUNTIME_DIR/" 2>&1 | tee -a "$LOG"
+cd "$RUNTIME_DIR"
+docker compose -f docker-compose.prod.yml build lightrag-api 2>&1 | tee -a "$LOG"
+docker compose -f docker-compose.prod.yml up -d lightrag-api 2>&1 | tee -a "$LOG"
+echo "[update] done $(date)" | tee -a "$LOG"
+UPD
+chmod +x /usr/local/bin/lightrag-update.sh || true
 if [ ! -f Dockerfile ]; then
   if [ -f $SRC/Dockerfile ]; then cp $SRC/Dockerfile Dockerfile; else
     log "[WARN] Dockerfile missing, creating minimal"

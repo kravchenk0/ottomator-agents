@@ -128,7 +128,8 @@ resource "aws_instance" "lightrag_instance" {
     volume_type = "gp3"
   }
 
-  user_data = base64encode(templatefile("${path.module}/user_data.sh", {
+  # user_data: НЕ base64encode — провайдер сам кодирует. Иначе размер удваивается и превышает лимит 16KB.
+  user_data = templatefile("${path.module}/user_data.sh", {
     project_name                = var.project_name
     OPENAI_API_KEY              = var.openai_api_key
     OPENAI_MODEL                = "gpt-5-mini"
@@ -154,7 +155,7 @@ resource "aws_instance" "lightrag_instance" {
     API_SECRET_KEY              = var.rag_jwt_secret
     CORS_ALLOWED_ORIGINS        = "*"
     GITHUB_TOKEN                = var.github_token
-  }))
+  })
 
   tags = {
     Name = "${var.project_name}-instance"

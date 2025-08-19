@@ -25,13 +25,22 @@ def _collect_models_chain() -> List[str]:
 	return chain
 
 
-async def self_test_model(prompt: str = "ping", max_output_tokens: int = 8) -> Dict[str, Any]:
+async def self_test_model(prompt: str = "ping", max_output_tokens: int = 32) -> Dict[str, Any]:
 	api_key = os.getenv("OPENAI_API_KEY")
 	if not api_key:
 		return {"ok": False, "error": "NO_API_KEY", "tried": []}
 	client = AsyncOpenAI(api_key=api_key)
 	chain = _collect_models_chain()
 	temperature = float(os.getenv("OPENAI_TEMPERATURE", "0"))
+	# Разрешаем переопределить через переменную окружения, но не опускаться ниже 16
+	override = os.getenv("SELF_TEST_MAX_OUTPUT_TOKENS")
+	if override:
+		try:
+			ov = int(override)
+			if ov >= 16:
+				max_output_tokens = ov
+		except ValueError:
+			logger.debug("Invalid SELF_TEST_MAX_OUTPUT_TOKENS, ignoring")
 	tried: List[str] = []
 	last_error: Optional[str] = None
 	for model in chain:

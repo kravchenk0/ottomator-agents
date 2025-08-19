@@ -12,6 +12,12 @@ provider "aws" {
   region = var.aws_region
 }
 
+# Latest Amazon Linux 2 kernel 5.10 x86_64 AMI via public SSM parameter (region-specific automatically).
+# If var.ami_id is provided (non-empty), that value takes precedence (e.g., for a custom baked image).
+data "aws_ssm_parameter" "amzn2" {
+  name = "/aws/service/ami-amazon-linux-latest/amzn2-ami-kernel-5.10-hvm-x86_64-gp2"
+}
+
 # VPC and Networking
 resource "aws_vpc" "lightrag_vpc" {
   cidr_block           = var.vpc_cidr
@@ -117,7 +123,7 @@ resource "aws_key_pair" "lightrag_key" {
 
 # EC2 Instance
 resource "aws_instance" "lightrag_instance" {
-  ami                    = var.ami_id
+  ami                    = var.ami_id != "" ? var.ami_id : data.aws_ssm_parameter.amzn2.value
   instance_type          = var.instance_type
   key_name               = aws_key_pair.lightrag_key.key_name
   subnet_id              = aws_subnet.lightrag_subnet.id

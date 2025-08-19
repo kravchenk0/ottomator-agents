@@ -46,9 +46,9 @@ variable "volume_size" {
 }
 
 variable "ami_id" {
-  description = "AMI ID for the EC2 instance"
+  description = "(Optional) Override AMI ID for the EC2 instance. Leave empty to use latest Amazon Linux 2 (kernel 5.10 x86_64) via SSM parameter."
   type        = string
-  default     = "ami-0b72d0ebb7e8a51a6" # Amazon Linux 2 in eu-north-1
+  default     = ""
 }
 variable "openai_api_key" {
   description = "OpenAI API key"

@@ -36,7 +36,7 @@ class RAGDeps:
 
 
 def resolve_agent_model(explicit: Optional[str] = None) -> str:
-	base = explicit or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-4.1-mini"
+	base = explicit or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-5-mini"
 	if not base.startswith("openai:"):
 		base = f"openai:{base}"
 	return base

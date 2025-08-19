@@ -7,8 +7,8 @@ from dataclasses import dataclass
 @dataclass
 class RAGConfig:
 	working_dir: str = "./pydantic-docs"
-	embedding_model: str = "gpt-4.1-mini"
-	llm_model: str = "gpt-4.1-mini"
+	embedding_model: str = "gpt-5-mini"
+	llm_model: str = "gpt-5-mini"
 	rerank_enabled: bool = True
 	batch_size: int = 20
 	max_docs_for_rerank: int = 20

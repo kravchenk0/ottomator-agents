@@ -9,15 +9,15 @@ from pydantic import BaseModel, Field
 class OpenAIConfig(BaseModel):
     """OpenAI API configuration."""
     api_key: str = Field(..., description="OpenAI API key")
-    model: str = Field(default="gpt-4.1-mini", description="OpenAI model to use")
+    model: str = Field(default="gpt-5-mini", description="OpenAI model to use")
     temperature: float = Field(default=0.0, description="Model temperature")
     max_tokens: Optional[int] = Field(default=None, description="Maximum tokens for response")
 
 class RAGConfig(BaseModel):
     """RAG system configuration."""
     working_dir: str = Field(default="./pydantic-docs", description="Working directory for LightRAG")
-    embedding_model: str = Field(default="gpt-4.1-mini", description="Embedding model name")
-    llm_model: str = Field(default="gpt-4.1-mini", description="LLM model name")
+    embedding_model: str = Field(default="gpt-5-mini", description="Embedding model name")
+    llm_model: str = Field(default="gpt-5-mini", description="LLM model name")
     rerank_enabled: bool = Field(default=True, description="Enable document reranking")
     batch_size: int = Field(default=20, description="Batch size for processing")
     max_docs_for_rerank: int = Field(default=20, description="Maximum documents for reranking")
@@ -68,7 +68,7 @@ class Config:
         if not hasattr(self, 'openai'):
             self.openai = OpenAIConfig(
                 api_key=os.getenv("OPENAI_API_KEY", ""),
-                model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+                model=os.getenv("OPENAI_MODEL", "gpt-5-mini"),
                 temperature=float(os.getenv("OPENAI_TEMPERATURE", "0.0")),
                 max_tokens=int(os.getenv("OPENAI_MAX_TOKENS", "0")) if os.getenv("OPENAI_MAX_TOKENS") else None
             )
@@ -77,8 +77,8 @@ class Config:
         if not hasattr(self, 'rag'):
             self.rag = RAGConfig(
                 working_dir=os.getenv("RAG_WORKING_DIR", "./pydantic-docs"),
-                embedding_model=os.getenv("RAG_EMBEDDING_MODEL", "gpt-4.1-mini"),
-                llm_model=os.getenv("RAG_LLM_MODEL", "gpt-4.1-mini"),
+                embedding_model=os.getenv("RAG_EMBEDDING_MODEL", "gpt-5-mini"),
+                llm_model=os.getenv("RAG_LLM_MODEL", "gpt-5-mini"),
                 rerank_enabled=os.getenv("RAG_RERANK_ENABLED", "true").lower() == "true",
                 batch_size=int(os.getenv("RAG_BATCH_SIZE", "20")),
                 max_docs_for_rerank=int(os.getenv("RAG_MAX_DOCS_FOR_RERANK", "20")),

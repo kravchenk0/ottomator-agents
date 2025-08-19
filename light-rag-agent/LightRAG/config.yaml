@@ -1,13 +1,13 @@
 openai:
   api_key: "${OPENAI_API_KEY}"
-  model: "gpt-4.1-mini"
+  model: "gpt-5-mini"
   temperature: 0.0
   max_tokens: null
 
 rag:
   working_dir: "./documents"
-  embedding_model: "gpt-4.1-mini"
-  llm_model: "gpt-4.1-mini"
+  embedding_model: "gpt-5-mini"
+  llm_model: "gpt-5-mini"
   rerank_enabled: true
   batch_size: 20
   max_docs_for_rerank: 20

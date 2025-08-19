@@ -10,16 +10,15 @@ logger = logging.getLogger(__name__)
 
 
 def _collect_models_chain() -> List[str]:
-	primary = os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-4.1-mini"
+	primary = os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-5-mini"
 	fallbacks_env = os.getenv("OPENAI_FALLBACK_MODELS", "")
 	fallbacks = [m.strip() for m in fallbacks_env.split(",") if m.strip()]
 	chain: List[str] = []
 	if primary:
 		chain.append(primary)
-	if primary == "gpt-5" and "gpt-4.1-mini" not in fallbacks and primary != "gpt-4.1-mini":
-		fallbacks.append("gpt-4.1-mini")
-	if "gpt-4.1-mini" not in fallbacks and primary != "gpt-4.1-mini":
-		fallbacks.append("gpt-4.1-mini")
+	# Always ensure gpt-5-mini is present as a stable fallback
+	if primary != "gpt-5-mini" and "gpt-5-mini" not in fallbacks:
+		fallbacks.append("gpt-5-mini")
 	for m in fallbacks:
 		if m not in chain:
 			chain.append(m)

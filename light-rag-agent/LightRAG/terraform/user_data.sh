@@ -5,55 +5,44 @@
 
 set -e
 
-# Функции утилиты
-log() { echo "[user_data] $1" | tee -a /var/log/lightrag-user-data.log; }
-fail() { log "[ERROR] $1"; }
-
-retry() {
-  local attempts=$1; shift
-  local delay=$1; shift
-  local cmd="$@"
-  local n=1
-  while true; do
-    eval "$cmd" && return 0 || {
-      if [ $n -lt $attempts ]; then
-        log "retry($n/$attempts) cmd failed: $cmd"; sleep $delay; n=$((n+1));
-      else
-        return 1
-      fi
-    }
-  done
-}
-
-# Update system
-yum update -y
-
-# Install required packages
-yum install -y docker git curl wget acl
-
-# Start and enable Docker
-systemctl enable docker
-
-# Гарантируем наличие группы docker
-if ! getent group docker >/dev/null 2>&1; then
-  groupadd docker
-fi
-
-# Добавляем ec2-user в группу docker (если ещё не)
-if ! id -nG ec2-user | grep -q '\bdocker\b'; then
-  usermod -aG docker ec2-user
-fi
-
-# Конфигурируем daemon для использования группы docker
-mkdir -p /etc/docker
-cat > /etc/docker/daemon.json <<'DOCKERCFG'
-{ "group": "docker" }
-DOCKERCFG
-
-systemctl restart docker
-
-# Дожидаемся появления сокета и выставляем права (немедленный доступ без relogin через ACL)
-for i in {1..15}; do
+#!/bin/bash
+set -e
+LOG_FILE=/var/log/lightrag-user-data.log
+echo "[stub] start" | tee -a "$LOG_FILE"
+cat > /etc/profile.d/lightrag_env.sh <<EOF
+export OPENAI_API_KEY="${OPENAI_API_KEY}"
+export OPENAI_MODEL="${OPENAI_MODEL}"
+export OPENAI_TEMPERATURE="${OPENAI_TEMPERATURE}"
+export RAG_WORKING_DIR="${RAG_WORKING_DIR}"
+export RAG_EMBEDDING_MODEL="${RAG_EMBEDDING_MODEL}"
+export RAG_LLM_MODEL="${RAG_LLM_MODEL}"
+export RAG_RERANK_ENABLED="${RAG_RERANK_ENABLED}"
+export RAG_BATCH_SIZE="${RAG_BATCH_SIZE}"
+export RAG_MAX_DOCS_FOR_RERANK="${RAG_MAX_DOCS_FOR_RERANK}"
+export RAG_CHUNK_SIZE="${RAG_CHUNK_SIZE}"
+export RAG_CHUNK_OVERLAP="${RAG_CHUNK_OVERLAP}"
+export APP_DEBUG="${APP_DEBUG}"
+export APP_LOG_LEVEL="${APP_LOG_LEVEL}"
+export APP_MAX_CONVERSATION_HISTORY="${APP_MAX_CONVERSATION_HISTORY}"
+export APP_ENABLE_STREAMING="${APP_ENABLE_STREAMING}"
+export API_HOST="${API_HOST}"
+export API_PORT="${API_PORT}"
+export API_CORS_ORIGINS="${API_CORS_ORIGINS}"
+export API_ENABLE_DOCS="${API_ENABLE_DOCS}"
+export API_RATE_LIMIT="${API_RATE_LIMIT}"
+export API_MAX_REQUEST_SIZE="${API_MAX_REQUEST_SIZE}"
+export API_SECRET_KEY="${API_SECRET_KEY}"
+export CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS}"
+export GITHUB_TOKEN="${GITHUB_TOKEN}"
+EOF
+. /etc/profile.d/lightrag_env.sh || true
+yum install -y git curl >/dev/null 2>&1 || yum install -y git curl
+cd /home/ec2-user
+if [ -z "$GITHUB_TOKEN" ]; then echo "[stub][ERROR] GITHUB_TOKEN missing" | tee -a "$LOG_FILE"; exit 1; fi
+git clone https://$GITHUB_TOKEN@github.com/kravchenk0/ottomator-agents.git || echo "[stub] repo exists maybe"
+chown -R ec2-user:ec2-user ottomator-agents || true
+bash /home/ec2-user/ottomator-agents/light-rag-agent/LightRAG/terraform/bootstrap.sh >> "$LOG_FILE" 2>&1 &
+echo "[stub] bootstrap started (pid=$!)" | tee -a "$LOG_FILE"
   if [ -S /var/run/docker.sock ]; then
     chgrp docker /var/run/docker.sock || true
     chmod 660 /var/run/docker.sock || true

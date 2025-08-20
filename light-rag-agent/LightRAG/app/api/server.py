@@ -134,6 +134,8 @@ class IngestionDetail(BaseModel):
 
 
 class IngestionResult(BaseModel):
+    status: str  # e.g. "ok" | "no_files"
+    directory: Optional[str] = None
     added: int
     skipped: int
     total_indexed: int
@@ -471,7 +473,17 @@ async def ingest_scan(directory: str | None = None, rag_mgr: RAGManager = Depend
     scan_dir = directory or os.getenv("RAG_INGEST_DIR", "/data/ingest")
     files = scan_directory(scan_dir)
     if not files:
-        return {"status": "no_files", "directory": scan_dir, "files": 0}
+        # При отсутствии файлов всё равно возвращаем валидную структуру модели
+        from app.utils.ingestion import load_index  # локальный импорт чтобы избежать циклов
+        idx_len = len(load_index(rag_mgr.config.working_dir))
+        return {
+            "status": "no_files",
+            "directory": scan_dir,
+            "added": 0,
+            "skipped": 0,
+            "total_indexed": idx_len,
+            "details": [],
+        }
     async with _ingest_lock:
         result = await ingest_files(rag, files, rag_mgr.config.working_dir)
     return {"status": "ok", "directory": scan_dir, **result}

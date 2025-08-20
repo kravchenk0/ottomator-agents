@@ -470,7 +470,12 @@ async def upload_document(file: UploadFile = File(...), ingest: bool = True, rag
 )
 async def ingest_scan(directory: str | None = None, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     rag = await rag_mgr.get_rag()
-    scan_dir = directory or os.getenv("RAG_INGEST_DIR", "/data/ingest")
+    # Логика выбора директории:
+    # 1) Явно передана параметром
+    # 2) Переменная окружения RAG_INGEST_DIR
+    # 3) Папка raw_uploads внутри working_dir (загруженные файлы)
+    # 4) Фолбэк /data/ingest (исторический)
+    scan_dir = directory or os.getenv("RAG_INGEST_DIR") or str(Path(rag_mgr.config.working_dir) / "raw_uploads") or "/data/ingest"
     files = scan_directory(scan_dir)
     if not files:
         # При отсутствии файлов всё равно возвращаем валидную структуру модели

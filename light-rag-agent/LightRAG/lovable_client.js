@@ -1,454 +1,190 @@
 /**
- * LightRAG JavaScript Client for Lovable Integration
- * 
- * This client provides easy integration with LightRAG API server
- * for use in web forms and chat interfaces.
+ * LightRAG JavaScript Client (упрощённый)
+ * Оставлен только функционал для отправки сообщений в /chat.
+ *
+ * Конфигурация базового URL:
+ *  1) window.LIGHTRAG_BASE_URL (если задан в браузере до подключения скрипта)
+ *  2) process.env.LIGHTRAG_BASE_URL (если используется bundler / Node среда)
+ *  3) Жёсткий дефолт: https://bussinesindunes.ai
  */
-
+const LIGHTRAG_DEFAULT_BASE_URL = (
+    (typeof window !== 'undefined' && window.LIGHTRAG_BASE_URL) ||
+    (typeof process !== 'undefined' && process.env && process.env.LIGHTRAG_BASE_URL) ||
+    'https://bussinesindunes.ai'
+);
 class LightRAGClient {
-    constructor(baseUrl = 'http://localhost:8000') {
+    constructor(baseUrl = LIGHTRAG_DEFAULT_BASE_URL, options = {}) {
         this.baseUrl = baseUrl;
         this.conversationId = null;
-        this.userId = null;
-        this.defaultSystemPrompt = null;
+        this.userId = options.userId || null;
+        this.authToken = options.authToken || null; // JWT Bearer
+        this.apiKey = options.apiKey || null;       // Optional X-API-Key
     }
 
-    /**
-     * Set conversation ID for context
-     */
-    setConversationId(id) {
-        this.conversationId = id;
-        return this;
-    }
+    setConversationId(id) { this.conversationId = id; return this; }
+    setUserId(id) { this.userId = id; return this; }
+    setAuthToken(token) { this.authToken = token; return this; }
+    setApiKey(key) { this.apiKey = key; return this; }
+    resetConversation() { this.conversationId = null; return this; }
 
-    /**
-     * Set user ID for tracking
-     */
-    setUserId(id) {
-        this.userId = id;
-        return this;
-    }
-
-    /**
-     * Set default system prompt
-     */
-    setSystemPrompt(prompt) {
-        this.defaultSystemPrompt = prompt;
-        return this;
-    }
-
-    /**
-     * Send a chat message
-     */
-    async chat(message, options = {}) {
-        try {
-            const response = await fetch(`${this.baseUrl}/chat`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    message,
-                    conversation_id: options.conversation_id || this.conversationId,
-                    user_id: options.user_id || this.userId,
-                    system_prompt: options.system_prompt || this.defaultSystemPrompt,
-                }),
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const data = await response.json();
-            
-            // Update conversation ID if not set
-            if (!this.conversationId && data.conversation_id) {
-                this.conversationId = data.conversation_id;
-            }
-
-            return data;
-        } catch (error) {
-            console.error('Chat request failed:', error);
-            throw error;
+    async chat(message, { newConversation = false, conversation_id = null, user_id = null } = {}) {
+        if (newConversation || (!this.conversationId && conversation_id)) {
+            this.conversationId = conversation_id || `conv_${Date.now()}_${Math.random().toString(36).slice(2,10)}`;
         }
-    }
+        const headers = { 'Content-Type': 'application/json' };
+        if (this.authToken) headers['Authorization'] = `Bearer ${this.authToken}`;
+        if (this.apiKey) headers['X-API-Key'] = this.apiKey;
 
-    /**
-     * Search documents
-     */
-    async search(query, limit = 5) {
-        try {
-            const response = await fetch(
-                `${this.baseUrl}/documents/search?query=${encodeURIComponent(query)}&limit=${limit}`
-            );
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('Search request failed:', error);
-            throw error;
+        const body = {
+            message,
+            conversation_id: this.conversationId,
+            user_id: user_id || this.userId,
+        };
+        const resp = await fetch(`${this.baseUrl}/chat`, { method: 'POST', headers, body: JSON.stringify(body) });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const data = await resp.json();
+        if (!this.conversationId && data.conversation_id) this.conversationId = data.conversation_id;
+        if (data && data.metadata) {
+            data.rate_limit_remaining = data.metadata.rate_limit_remaining;
+            data.rate_limit_reset_seconds = data.metadata.rate_limit_reset_seconds;
         }
-    }
-
-    /**
-     * Insert a document
-     */
-    async insertDocument(content, documentId = null) {
-        try {
-            const response = await fetch(`${this.baseUrl}/documents/insert`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    content,
-                    document_id: documentId,
-                }),
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('Document insertion failed:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Get current configuration
-     */
-    async getConfig() {
-        try {
-            const response = await fetch(`${this.baseUrl}/config`);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('Config request failed:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Update configuration
-     */
-    async updateConfig(config) {
-        try {
-            const response = await fetch(`${this.baseUrl}/config`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(config),
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('Config update failed:', error);
-            throw error;
-        }
-    }
-
-    /**
-     * Check server health
-     */
-    async healthCheck() {
-        try {
-            const response = await fetch(`${this.baseUrl}/health`);
-            
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            return await response.json();
-        } catch (error) {
-            console.error('Health check failed:', error);
-            throw error;
-        }
+        return data;
     }
 }
 
 /**
- * Lovable Integration Helper
- * 
- * Provides specific methods for integrating with Lovable forms
+ * Минимальная интеграция с Lovable.
+ * Автоматически перехватывает:
+ *  - submit форм с классом .lovable-form
+ *  - Enter в input/textarea с классом .lovable-chat-input
+ * Показывает простой чат-контейнер.
  */
 class LovableLightRAGIntegration {
     constructor(apiUrl, options = {}) {
-        this.client = new LightRAGClient(apiUrl);
+        this.client = new LightRAGClient(apiUrl, options.client || {});
         this.options = {
             autoGenerateConversationId: true,
             showTypingIndicator: true,
-            enableStreaming: false,
             ...options
         };
-        
-        this.setupEventListeners();
+        this._bind();
     }
 
-    /**
-     * Setup event listeners for Lovable forms
-     */
-    setupEventListeners() {
-        // Listen for form submissions
+    _bind() {
         document.addEventListener('submit', (e) => {
-            if (e.target.classList.contains('lovable-form')) {
+            if (e.target.classList && e.target.classList.contains('lovable-form')) {
                 e.preventDefault();
-                this.handleFormSubmission(e.target);
+                this._handleForm(e.target);
             }
         });
-
-        // Listen for chat input
         document.addEventListener('keypress', (e) => {
-            if (e.target.classList.contains('lovable-chat-input') && e.key === 'Enter') {
+            if (e.key === 'Enter' && e.target.classList && e.target.classList.contains('lovable-chat-input')) {
                 e.preventDefault();
-                this.handleChatInput(e.target);
+                this._handleInput(e.target);
             }
         });
     }
 
-    /**
-     * Handle form submission
-     */
-    async handleFormSubmission(form) {
-        const submitButton = form.querySelector('button[type="submit"]');
-        const originalText = submitButton.textContent;
-        
+    async _handleForm(form) {
+        const btn = form.querySelector('button[type="submit"]');
+        const original = btn ? btn.textContent : null;
+        if (btn) { btn.disabled = true; btn.textContent = '...'; }
         try {
-            // Disable submit button
-            submitButton.disabled = true;
-            submitButton.textContent = 'Processing...';
-
-            // Get form data
-            const formData = new FormData(form);
-            const message = formData.get('message') || formData.get('question') || formData.get('input');
-            
-            if (!message) {
-                throw new Error('No message found in form');
-            }
-
-            // Generate conversation ID if needed
+            const fd = new FormData(form);
+            const message = fd.get('message') || fd.get('question') || fd.get('input');
+            if (!message) throw new Error('Нет текста');
             if (this.options.autoGenerateConversationId && !this.client.conversationId) {
-                this.client.setConversationId(`conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+                this.client.setConversationId(`conv_${Date.now()}_${Math.random().toString(36).slice(2,10)}`);
             }
-
-            // Send chat request
-            const response = await this.client.chat(message);
-
-            // Display response
-            this.displayResponse(response, form);
-
-        } catch (error) {
-            console.error('Form submission failed:', error);
-            this.displayError(error.message, form);
+            const r = await this.client.chat(message);
+            this._renderFormAnswer(form, r);
+        } catch (err) {
+            this._renderFormError(form, err.message || String(err));
         } finally {
-            // Re-enable submit button
-            submitButton.disabled = false;
-            submitButton.textContent = originalText;
+            if (btn) { btn.disabled = false; btn.textContent = original; }
         }
     }
 
-    /**
-     * Handle chat input
-     */
-    async handleChatInput(input) {
-        const message = input.value.trim();
+    async _handleInput(inputEl) {
+        const message = inputEl.value.trim();
         if (!message) return;
-
-        // Clear input
-        input.value = '';
-
-        // Show user message
-        this.displayUserMessage(message);
-
+        inputEl.value = '';
+        this._appendUser(message);
         try {
-            // Show typing indicator
-            if (this.options.showTypingIndicator) {
-                this.showTypingIndicator();
-            }
-
-            // Generate conversation ID if needed
+            if (this.options.showTypingIndicator) this._showTyping();
             if (this.options.autoGenerateConversationId && !this.client.conversationId) {
-                this.client.setConversationId(`conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`);
+                this.client.setConversationId(`conv_${Date.now()}_${Math.random().toString(36).slice(2,10)}`);
             }
-
-            // Send chat request
-            const response = await this.client.chat(message);
-
-            // Hide typing indicator
-            if (this.options.showTypingIndicator) {
-                this.hideTypingIndicator();
-            }
-
-            // Display response
-            this.displayChatResponse(response);
-
-        } catch (error) {
-            console.error('Chat input failed:', error);
-            this.hideTypingIndicator();
-            this.displayChatError(error.message);
+            const r = await this.client.chat(message);
+            if (this.options.showTypingIndicator) this._hideTyping();
+            this._appendAI(r);
+        } catch (err) {
+            if (this.options.showTypingIndicator) this._hideTyping();
+            this._appendError(err.message || String(err));
         }
     }
 
-    /**
-     * Display response in form
-     */
-    displayResponse(response, form) {
-        let responseContainer = form.querySelector('.lightrag-response');
-        
-        if (!responseContainer) {
-            responseContainer = document.createElement('div');
-            responseContainer.className = 'lightrag-response';
-            form.appendChild(responseContainer);
+    _renderFormAnswer(form, resp) {
+        let c = form.querySelector('.lightrag-response');
+        if (!c) { c = document.createElement('div'); c.className = 'lightrag-response'; form.appendChild(c); }
+        c.innerHTML = `<div><strong>Ответ:</strong><p>${resp.response}</p><p><small>ID: ${resp.conversation_id || this.client.conversationId || ''}</small></p>${resp.metadata ? this._meta(resp.metadata) : ''}</div>`;
+    }
+    _renderFormError(form, msg) {
+        let c = form.querySelector('.lightrag-error');
+        if (!c) { c = document.createElement('div'); c.className = 'lightrag-error'; form.appendChild(c); }
+        c.innerHTML = `<div style="color:red"><strong>Ошибка:</strong> ${msg}</div>`;
+    }
+
+    _appendUser(text) {
+        const chat = this._chat();
+        const d = document.createElement('div');
+        d.className = 'user-msg';
+        d.innerHTML = `<p><strong>Вы:</strong> ${text}</p>`;
+        chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
+    }
+    _appendAI(resp) {
+        const chat = this._chat();
+        const d = document.createElement('div');
+        d.className = 'ai-msg';
+        d.innerHTML = `<p><strong>AI:</strong> ${resp.response}</p>${resp.metadata ? this._meta(resp.metadata) : ''}`;
+        chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
+    }
+    _appendError(msg) {
+        const chat = this._chat();
+        const d = document.createElement('div');
+        d.className = 'err-msg';
+        d.innerHTML = `<p style="color:red"><strong>Ошибка:</strong> ${msg}</p>`;
+        chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
+    }
+    _showTyping() {
+        const chat = this._chat();
+        if (chat.querySelector('.typing')) return;
+        const d = document.createElement('div'); d.className = 'typing'; d.innerHTML = '<p><em>...</em></p>'; chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
+    }
+    _hideTyping() {
+        const chat = this._chat(); const t = chat.querySelector('.typing'); if (t) t.remove();
+    }
+    _meta(meta) {
+        const parts = [];
+        if (meta.processing_time) parts.push(`t:${meta.processing_time.toFixed ? meta.processing_time.toFixed(2) : meta.processing_time}s`);
+        if (meta.history_messages !== undefined) parts.push(`h:${meta.history_messages}`);
+        if (meta.rate_limit_remaining !== undefined) parts.push(`left:${meta.rate_limit_remaining}`);
+        if (meta.rate_limit_reset_seconds !== undefined) parts.push(`reset:${meta.rate_limit_reset_seconds}s`);
+        return parts.length ? `<p><small>${parts.join(' | ')}</small></p>` : '';
+    }
+    _chat() {
+        let c = document.querySelector('.lightrag-chat');
+        if (!c) {
+            c = document.createElement('div');
+            c.className = 'lightrag-chat';
+            c.style.cssText = 'max-height:400px;overflow-y:auto;border:1px solid #ccc;padding:8px;margin:10px 0;font:14px sans-serif;';
+            const anchor = document.querySelector('.lovable-form, .lovable-chat-input');
+            if (anchor) anchor.parentNode.insertBefore(c, anchor.nextSibling); else document.body.appendChild(c);
         }
-
-        responseContainer.innerHTML = `
-            <div class="response-content">
-                <h4>AI Response:</h4>
-                <p>${response.response}</p>
-                ${response.sources ? `<p><small>Sources: ${response.sources.length} documents</small></p>` : ''}
-                <p><small>Conversation ID: ${response.conversation_id}</small></p>
-            </div>
-        `;
-    }
-
-    /**
-     * Display error in form
-     */
-    displayError(message, form) {
-        let errorContainer = form.querySelector('.lightrag-error');
-        
-        if (!errorContainer) {
-            errorContainer = document.createElement('div');
-            errorContainer.className = 'lightrag-error';
-            form.appendChild(errorContainer);
-        }
-
-        errorContainer.innerHTML = `
-            <div class="error-content" style="color: red;">
-                <h4>Error:</h4>
-                <p>${message}</p>
-            </div>
-        `;
-    }
-
-    /**
-     * Display user message in chat
-     */
-    displayUserMessage(message) {
-        const chatContainer = this.getChatContainer();
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'user-message';
-        messageDiv.innerHTML = `<p><strong>You:</strong> ${message}</p>`;
-        chatContainer.appendChild(messageDiv);
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    /**
-     * Display AI response in chat
-     */
-    displayChatResponse(response) {
-        const chatContainer = this.getChatContainer();
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'ai-message';
-        messageDiv.innerHTML = `
-            <p><strong>AI:</strong> ${response.response}</p>
-            ${response.sources ? `<p><small>Sources: ${response.sources.length} documents</small></p>` : ''}
-        `;
-        chatContainer.appendChild(messageDiv);
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    /**
-     * Display chat error
-     */
-    displayChatError(message) {
-        const chatContainer = this.getChatContainer();
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'error-message';
-        messageDiv.innerHTML = `<p style="color: red;"><strong>Error:</strong> ${message}</p>`;
-        chatContainer.appendChild(messageDiv);
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    /**
-     * Show typing indicator
-     */
-    showTypingIndicator() {
-        const chatContainer = this.getChatContainer();
-        let indicator = chatContainer.querySelector('.typing-indicator');
-        
-        if (!indicator) {
-            indicator = document.createElement('div');
-            indicator.className = 'typing-indicator';
-            indicator.innerHTML = '<p><em>AI is typing...</em></p>';
-            chatContainer.appendChild(indicator);
-        }
-        
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-    }
-
-    /**
-     * Hide typing indicator
-     */
-    hideTypingIndicator() {
-        const chatContainer = this.getChatContainer();
-        const indicator = chatContainer.querySelector('.typing-indicator');
-        if (indicator) {
-            indicator.remove();
-        }
-    }
-
-    /**
-     * Get or create chat container
-     */
-    getChatContainer() {
-        let container = document.querySelector('.lightrag-chat-container');
-        
-        if (!container) {
-            container = document.createElement('div');
-            container.className = 'lightrag-chat-container';
-            container.style.cssText = `
-                max-height: 400px;
-                overflow-y: auto;
-                border: 1px solid #ccc;
-                padding: 10px;
-                margin: 10px 0;
-            `;
-            
-            // Insert after the first form or chat input
-            const form = document.querySelector('.lovable-form, .lovable-chat-input');
-            if (form) {
-                form.parentNode.insertBefore(container, form.nextSibling);
-            } else {
-                document.body.appendChild(container);
-            }
-        }
-        
-        return container;
+        return c;
     }
 }
 
-// Export for use in modules
-if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { LightRAGClient, LovableLightRAGIntegration };
-}
-
-// Make available globally
-if (typeof window !== 'undefined') {
-    window.LightRAGClient = LightRAGClient;
-    window.LovableLightRAGIntegration = LovableLightRAGIntegration;
-} 
+// Exports
+if (typeof module !== 'undefined' && module.exports) module.exports = { LightRAGClient, LovableLightRAGIntegration };
+if (typeof window !== 'undefined') { window.LightRAGClient = LightRAGClient; window.LovableLightRAGIntegration = LovableLightRAGIntegration; }

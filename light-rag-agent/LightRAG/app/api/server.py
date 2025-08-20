@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
@@ -91,10 +91,16 @@ class ChatRequest(BaseModel):
     model: Optional[str] = None  # запрошенная модель (опционально)
 
 
+class ChatSource(BaseModel):
+    file_path: Optional[str] = None
+    snippet: Optional[str] = None
+    score: Optional[float] = None
+
+
 class ChatResponse(BaseModel):
     response: str
     conversation_id: str
-    sources: Optional[list] = None
+    sources: Optional[List[ChatSource]] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     error: Optional[str] = None  # текст ошибки, если запрос завершился неуспешно
 
@@ -117,6 +123,68 @@ class ConfigRequest(BaseModel):
     working_dir: Optional[str] = None
     system_prompt: Optional[str] = None
     rerank_enabled: Optional[bool] = None
+
+
+# ---- Ingestion / Index models ----
+class IngestionDetail(BaseModel):
+    file: str
+    status: str
+    reason: Optional[str] = None
+    error: Optional[str] = None
+
+
+class IngestionResult(BaseModel):
+    added: int
+    skipped: int
+    total_indexed: int
+    details: List[IngestionDetail]
+
+
+class IndexEntry(BaseModel):
+    file: str
+    hash: Optional[str] = None
+    size: Optional[int] = None
+
+
+class IndexListResponse(BaseModel):
+    status: str
+    index: List[IndexEntry]
+
+
+class DeleteRequest(BaseModel):
+    files: List[str]
+
+
+class DeleteResult(BaseModel):
+    status: str
+    removed: int
+    not_found: List[str]
+    total_indexed: int
+
+
+class ClearResult(BaseModel):
+    status: str
+    cleared: bool
+    total_indexed: int
+
+
+class InsertResult(BaseModel):
+    status: str
+    message: str
+    document_id: str
+
+
+class SearchResultItem(BaseModel):
+    # структура неизвестна детально: оставляем гибкие поля
+    data: Optional[str] = None
+    score: Optional[float] = None
+    metadata: Optional[Dict[str, Any]] = None
+
+
+class SearchResponse(BaseModel):
+    query: str
+    limit: int
+    results: List[Any]  # оставляем Any, т.к. движок может вернуть сложную структуру
 
 
 async def get_rag_manager() -> RAGManager:
@@ -339,7 +407,8 @@ async def get_config(_claims=Depends(require_jwt)):
 @app.post(
     "/documents/insert",
     summary="Быстрая вставка текста",
-    description="Асинхронно добавляет один текстовый документ напрямую в индекс без загрузки файла. Требует JWT Bearer."
+    description="Асинхронно добавляет один текстовый документ напрямую в индекс без загрузки файла. Требует JWT Bearer.",
+    response_model=InsertResult
 )
 async def insert_document(content: str, document_id: Optional[str] = None, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     try:
@@ -353,7 +422,8 @@ async def insert_document(content: str, document_id: Optional[str] = None, rag_m
 @app.get(
     "/documents/search",
     summary="Поиск по индексированным документам",
-    description="Выполняет смешанный (mode=mix) запрос к RAG индексу. Возвращает сырые результаты движка. Требует JWT Bearer."
+    description="Выполняет смешанный (mode=mix) запрос к RAG индексу. Возвращает сырые результаты движка. Требует JWT Bearer.",
+    response_model=SearchResponse
 )
 async def search_documents(query: str, limit: int = 5, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     try:
@@ -371,7 +441,8 @@ _ingest_lock = asyncio.Lock()
 @app.post(
     "/documents/upload",
     summary="Загрузка файла",
-    description="Загружает файл (multipart/form-data) в raw_uploads и опционально сразу выполняет ingest (парсинг + индексирование). Требует JWT Bearer."
+    description="Загружает файл (multipart/form-data) в raw_uploads и опционально сразу выполняет ingest (парсинг + индексирование). Требует JWT Bearer.",
+    response_model=Dict[str, Any]
 )
 async def upload_document(file: UploadFile = File(...), ingest: bool = True, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     rag = await rag_mgr.get_rag()
@@ -392,7 +463,8 @@ async def upload_document(file: UploadFile = File(...), ingest: bool = True, rag
 @app.post(
     "/documents/ingest/scan",
     summary="Скан + ingest директории",
-    description="Сканирует директорию (по умолчанию RAG_INGEST_DIR) и индексирует новые/обновлённые файлы. Требует JWT Bearer."
+    description="Сканирует директорию (по умолчанию RAG_INGEST_DIR) и индексирует новые/обновлённые файлы. Требует JWT Bearer.",
+    response_model=IngestionResult
 )
 async def ingest_scan(directory: str | None = None, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     rag = await rag_mgr.get_rag()
@@ -408,10 +480,20 @@ async def ingest_scan(directory: str | None = None, rag_mgr: RAGManager = Depend
 @app.get(
     "/documents/ingest/list",
     summary="Список индексированных документов",
-    description="Возвращает содержимое локального индекса (метаданные). Требует JWT Bearer."
+    description="Возвращает содержимое локального индекса (метаданные). Требует JWT Bearer.",
+    response_model=IndexListResponse
 )
 async def ingest_list(rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
-    return {"status": "ok", "index": list_index(rag_mgr.config.working_dir)}
+    idx = list_index(rag_mgr.config.working_dir)
+    # нормализуем ключи: ensure hash/size присутствуют даже если нет
+    norm = []
+    for e in idx:
+        norm.append({
+            "file": e.get("file"),
+            "hash": e.get("hash"),
+            "size": e.get("size"),
+        })
+    return {"status": "ok", "index": norm}
 
 
 from app.utils.ingestion import delete_from_index, clear_index
@@ -420,17 +502,19 @@ from app.utils.ingestion import delete_from_index, clear_index
 @app.post(
     "/documents/ingest/delete",
     summary="Удалить документы из индекса",
-    description="Удаляет перечисленные файлы из индекса по именам. Требует JWT Bearer."
+    description="Удаляет перечисленные файлы из индекса по именам. Требует JWT Bearer.",
+    response_model=DeleteResult
 )
-async def ingest_delete(files: list[str], rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
-    result = delete_from_index(rag_mgr.config.working_dir, files)
+async def ingest_delete(req: DeleteRequest, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
+    result = delete_from_index(rag_mgr.config.working_dir, req.files)
     return {"status": "ok", **result}
 
 
 @app.post(
     "/documents/ingest/clear",
     summary="Очистить индекс",
-    description="Полностью очищает локальный индекс документов. Требует JWT Bearer."
+    description="Полностью очищает локальный индекс документов. Требует JWT Bearer.",
+    response_model=ClearResult
 )
 async def ingest_clear(rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     result = clear_index(rag_mgr.config.working_dir)

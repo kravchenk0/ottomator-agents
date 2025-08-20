@@ -220,7 +220,6 @@ python rag_agent.py --question "Test question"
 
 ### 4. **Проверьте веб-интерфейс**
 ```bash
-streamlit run streamlit_app.py
 ```
 
 ## 🔍 Отладка

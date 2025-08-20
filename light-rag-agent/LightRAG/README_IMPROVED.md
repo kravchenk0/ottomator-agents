@@ -175,7 +175,7 @@ from app.core import RAGManager, RAGConfig
 python insert_pydantic_docs.py --url
 ```
 
-<!-- Streamlit UI удалён в этой конфигурации -->
+<!-- Streamlit UI полностью исключён: файл streamlit_app.py удалён -->
 
 ### Запуск FastAPI сервера
 

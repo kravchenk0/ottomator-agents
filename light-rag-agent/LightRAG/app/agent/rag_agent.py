@@ -46,9 +46,21 @@ def _register_tools(agent: Agent) -> Agent:
 	@agent.tool
 	async def retrieve(context: RunContext[RAGDeps], search_query: str) -> str:  # type: ignore
 		try:
+			logger.debug(f"[retrieve] start query='{search_query}'")
 			rag = await context.deps.rag_manager.get_rag()
-			return await rag.aquery(search_query, param=QueryParam(mode="mix"))
+			result = await rag.aquery(search_query, param=QueryParam(mode="mix"))
+			# Лёгкая диагностика структуры результата
+			try:  # noqa: SIM105
+				if isinstance(result, list):
+					logger.debug(f"[retrieve] got list len={len(result)}")
+				elif isinstance(result, dict):
+					logger.debug(f"[retrieve] got dict keys={list(result.keys())[:6]}")
+			except Exception:  # noqa: BLE001
+				pass
+			logger.debug("[retrieve] done")
+			return result
 		except Exception as e:  # noqa: BLE001
+			logger.warning(f"[retrieve] error: {e}")
 			return f"Error retrieving documents: {e}"
 	return agent
 

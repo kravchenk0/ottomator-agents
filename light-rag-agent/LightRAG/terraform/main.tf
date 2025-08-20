@@ -67,41 +67,30 @@ resource "aws_route_table_association" "lightrag_rta" {
 }
 
 # Security Group
+locals {
+  ingress_ports = [
+    { from = 22,  to = 22,  description = "SSH" },
+    { from = 80,  to = 80,  description = "HTTP" },
+    { from = 443, to = 443, description = "HTTPS" },
+    { from = 8000, to = 8000, description = "LightRAG API" },
+  ]
+  effective_ingress_cidrs = length(var.allowed_ingress_cidrs) > 0 ? var.allowed_ingress_cidrs : ["0.0.0.0/0"]
+}
+
 resource "aws_security_group" "lightrag_sg" {
   name        = "${var.project_name}-sg"
   description = "Security group for LightRAG API"
   vpc_id      = aws_vpc.lightrag_vpc.id
 
-  ingress {
-    description = "SSH"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "HTTP"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "HTTPS"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    description = "LightRAG API"
-    from_port   = 8000
-    to_port     = 8000
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+  dynamic "ingress" {
+    for_each = { for p in local.ingress_ports : p.from => p }
+    content {
+      description = ingress.value.description
+      from_port   = ingress.value.from
+      to_port     = ingress.value.to
+      protocol    = "tcp"
+      cidr_blocks = local.effective_ingress_cidrs
+    }
   }
 
   egress {

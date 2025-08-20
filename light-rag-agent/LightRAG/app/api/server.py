@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import Header, status, FastAPI, HTTPException, Depends, UploadFile, File
@@ -89,6 +90,73 @@ _model_self_test: Dict[str, Any] | None = None
 _create_agent = None  # type: ignore
 _RAGDeps = None  # type: ignore
 
+# ---- In-memory conversation storage (этап 1) ----
+# conversations[conversation_id] = list[ {"role": "user"|"assistant", "content": str} ]
+conversations: Dict[str, List[Dict[str, str]]] = {}
+conversation_meta: Dict[str, Dict[str, float]] = {}  # {id: {created, last_activity}}
+MAX_HISTORY_MESSAGES = int(os.getenv("RAG_MAX_HISTORY_MESSAGES", "12"))  # обрезаем глубину
+CONVERSATION_TTL_SECONDS = int(os.getenv("RAG_CONVERSATION_TTL_SECONDS", "3600"))  # 1 час по умолчанию
+USER_RATE_LIMIT = int(os.getenv("RAG_USER_RATE_LIMIT", "10"))  # 10 запросов / окно
+USER_RATE_WINDOW_SECONDS = int(os.getenv("RAG_USER_RATE_WINDOW_SECONDS", "3600"))
+user_rate: Dict[str, Dict[str, float]] = {}  # {user_id: {count, window_start}}
+
+def _enforce_user_rate_limit(user_id: str):
+    now = time.time()
+    data = user_rate.get(user_id)
+    if not data:
+        user_rate[user_id] = {"count": 1, "window_start": now}
+        return
+    window_start = data["window_start"]
+    if now - window_start >= USER_RATE_WINDOW_SECONDS:
+        # reset window
+        user_rate[user_id] = {"count": 1, "window_start": now}
+        return
+    if data["count"] >= USER_RATE_LIMIT:
+        remaining = int(USER_RATE_WINDOW_SECONDS - (now - window_start))
+        raise HTTPException(status_code=429, detail=f"Rate limit exceeded: {USER_RATE_LIMIT} requests per {USER_RATE_WINDOW_SECONDS//60}m window. Retry in {remaining}s")
+    data["count"] += 1
+
+def _rate_limit_remaining(user_id: str) -> int:
+    data = user_rate.get(user_id)
+    if not data:
+        return USER_RATE_LIMIT
+    if time.time() - data["window_start"] >= USER_RATE_WINDOW_SECONDS:
+        return USER_RATE_LIMIT
+    return max(0, USER_RATE_LIMIT - int(data["count"]))
+
+def cleanup_expired_conversations() -> int:
+    now = time.time()
+    expired: List[str] = []
+    for cid, meta in list(conversation_meta.items()):
+        if now - meta.get("last_activity", meta.get("created", now)) > CONVERSATION_TTL_SECONDS:
+            expired.append(cid)
+    for cid in expired:
+        conversations.pop(cid, None)
+        conversation_meta.pop(cid, None)
+    return len(expired)
+
+def build_history_context(messages: List[Dict[str, str]], include_last_user: bool = False) -> str:
+    """Собирает текстовую историю для встраивания в system_prompt.
+
+    Берём последние MAX_HISTORY_MESSAGES сообщений. По умолчанию исключаем
+    последнее пользовательское сообщение (оно приходит отдельным prompt'ом в agent.run).
+    Форматируем строки вида "User: ..." / "Assistant: ...".
+    """
+    if not messages:
+        return ""
+    relevant = messages[-MAX_HISTORY_MESSAGES:]
+    if not include_last_user and relevant and relevant[-1].get("role") == "user":
+        relevant = relevant[:-1]
+    lines: List[str] = []
+    for m in relevant:
+        role = m.get("role", "user")
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+        prefix = "User" if role == "user" else "Assistant"
+        lines.append(f"{prefix}: {content}")
+    return "\n".join(lines)
+
 # Простой performance logger fallback (используется чатом)
 class _PerfLogger:
     def __init__(self):
@@ -129,6 +197,21 @@ class ChatResponse(BaseModel):
     sources: Optional[List[ChatSource]] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
     error: Optional[str] = None  # текст ошибки, если запрос завершился неуспешно
+
+
+class ConversationHistory(BaseModel):
+    conversation_id: str
+    messages: List[Dict[str, str]]
+
+
+class ConversationList(BaseModel):
+    conversations: List[str]
+
+
+class ConversationClearResult(BaseModel):
+    status: str
+    cleared: int
+    conversations_remaining: int
 
 
 class HealthResponse(BaseModel):
@@ -345,7 +428,28 @@ async def chat_endpoint(
     if not request.message or not request.message.strip():
         performance_logger.end_timer("chat_request")
         raise HTTPException(status_code=400, detail="'message' is required and cannot be empty")
-    current_prompt = system_prompt  # игнорируем request.system_prompt теперь
+
+    # --- Conversation memory (этап 2) ---
+    # Очистка просроченных диалогов (ленивая)
+    cleanup_expired_conversations()
+    # User id для лимитов
+    user_id = request.user_id or (_claims.get("sub") if isinstance(_claims, dict) else None) or "anonymous"
+    # Rate limit enforcement
+    _enforce_user_rate_limit(user_id)
+    msgs = conversations.setdefault(conv_id, [])  # существующая или новая история
+    meta = conversation_meta.setdefault(conv_id, {"created": time.time(), "last_activity": time.time()})
+    # Добавляем текущий user message в хвост
+    msgs.append({"role": "user", "content": request.message})
+    # При необходимости ограничиваем размер хранимой истории (мягкая обрезка)
+    if len(msgs) > MAX_HISTORY_MESSAGES * 3:
+        del msgs[: len(msgs) - MAX_HISTORY_MESSAGES * 2]
+    # Формируем history_context (исключая только что добавленное user сообщение)
+    history_context = build_history_context(msgs, include_last_user=False)
+    if history_context:
+        effective_prompt = f"{system_prompt}\n\nConversation so far:\n{history_context}\n---"
+    else:
+        effective_prompt = system_prompt
+    current_prompt = effective_prompt  # будет передан агенту
     global _create_agent, _RAGDeps
     try:
         # (re)init agent factory if needed
@@ -369,6 +473,9 @@ async def chat_endpoint(
                 sources = getattr(result, 'metadata', {}).get('sources') if getattr(result, 'metadata', None) else None
             except Exception:  # noqa: BLE001
                 sources = None
+            # Добавляем assistant ответ в историю
+            msgs.append({"role": "assistant", "content": result.data})
+            meta["last_activity"] = time.time()
             performance_logger.end_timer("chat_request")
             performance_logger.log_metric("messages_processed", 1, "msg")
             return ChatResponse(
@@ -376,10 +483,13 @@ async def chat_endpoint(
                 conversation_id=conv_id,
                 sources=sources,
                 metadata={
-                    "user_id": request.user_id,
+                    "user_id": user_id,
                     "model": request.model or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL"),
                     "system_prompt_used": (current_prompt[:100] + "...") if current_prompt and len(current_prompt) > 100 else current_prompt,
                     "processing_time": performance_logger.get_summary().get("chat_request", 0),
+                    "history_messages": len(msgs),
+                    "history_context_chars": len(history_context) if history_context else 0,
+                    "rate_limit_remaining": _rate_limit_remaining(user_id),
                 },
             )
         except Exception as run_err:  # noqa: BLE001
@@ -397,9 +507,12 @@ async def chat_endpoint(
                 conversation_id=conv_id,
                 error=f"{code}: {err_str}",
                 metadata={
-                    "user_id": request.user_id,
+                    "user_id": user_id,
                     "model": request.model or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL"),
                     "processing_time": performance_logger.get_summary().get("chat_request", 0),
+            "history_messages": len(msgs),
+            "history_context_chars": len(history_context) if history_context else 0,
+                    "rate_limit_remaining": _rate_limit_remaining(user_id),
                 },
             )
     except Exception as outer:  # noqa: BLE001
@@ -408,7 +521,7 @@ async def chat_endpoint(
             response="",
             conversation_id=conv_id,
             error=f"INIT_ERROR: {outer}",
-            metadata={"stage": "outer"},
+        metadata={"stage": "outer", "history_messages": len(conversations.get(conv_id, []))},
         )
 
 
@@ -607,3 +720,55 @@ def get_app() -> FastAPI:  # helper for ASGI servers
 
 (Шаг 1) Заглушка.
 """
+
+
+# -------- Conversation management endpoints --------
+@app.get(
+    "/conversations",
+    response_model=ConversationList,
+    summary="Список conversation_id",
+    description="Возвращает список активных conversation_id в памяти. Требует JWT Bearer.")
+async def list_conversations(_claims=Depends(require_jwt)):
+    cleanup_expired_conversations()
+    return {"conversations": list(conversations.keys())}
+
+
+@app.get(
+    "/conversations/{conversation_id}",
+    response_model=ConversationHistory,
+    summary="История диалога",
+    description="Возвращает полную историю сообщений для указанного conversation_id. Требует JWT Bearer.")
+async def get_conversation(conversation_id: str, _claims=Depends(require_jwt)):
+    # Проверяем TTL и очищаем если нужно
+    meta = conversation_meta.get(conversation_id)
+    if meta and time.time() - meta.get("last_activity", meta.get("created", 0)) > CONVERSATION_TTL_SECONDS:
+        conversations.pop(conversation_id, None)
+        conversation_meta.pop(conversation_id, None)
+        raise HTTPException(status_code=404, detail="Conversation expired")
+    msgs = conversations.get(conversation_id)
+    if msgs is None:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    return {"conversation_id": conversation_id, "messages": msgs}
+
+
+@app.delete(
+    "/conversations/{conversation_id}",
+    response_model=ConversationClearResult,
+    summary="Удалить один диалог",
+    description="Удаляет конкретный диалог из памяти. Требует JWT Bearer.")
+async def delete_conversation(conversation_id: str, _claims=Depends(require_jwt)):
+    removed = 1 if conversations.pop(conversation_id, None) is not None else 0
+    conversation_meta.pop(conversation_id, None)
+    return {"status": "ok", "cleared": removed, "conversations_remaining": len(conversations)}
+
+
+@app.delete(
+    "/conversations",
+    response_model=ConversationClearResult,
+    summary="Очистить все диалоги",
+    description="Полностью очищает память всех диалогов. Требует JWT Bearer.")
+async def clear_conversations(_claims=Depends(require_jwt)):
+    count = len(conversations)
+    conversations.clear()
+    conversation_meta.clear()
+    return {"status": "ok", "cleared": count, "conversations_remaining": 0}

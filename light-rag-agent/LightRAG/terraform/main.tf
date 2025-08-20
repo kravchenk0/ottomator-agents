@@ -197,3 +197,49 @@ output "health_check_url" {
   description = "Health check URL"
   value       = "http://${aws_eip.lightrag_eip.public_ip}:8000/health"
 } 
+
+# -----------------------------
+# Optional DNS (Route53) setup
+# Exposes the API via domain/subdomain if domain_name provided.
+# Logic:
+#  - If var.route53_zone_id supplied -> use existing hosted zone
+#  - Else if var.domain_name set -> create a new public hosted zone
+#  - Create A record pointing to instance (EIP if present)
+# NOTE: variable create_eip currently not enforced in code above (EIP resource always created).
+#       Record uses the Elastic IP for stability.
+# -----------------------------
+
+locals {
+  fqdn = var.domain_name != "" ? (var.app_subdomain != "" ? "${var.app_subdomain}.${var.domain_name}" : var.domain_name) : ""
+}
+
+data "aws_route53_zone" "existing" {
+  count  = var.route53_zone_id != "" && var.domain_name != "" ? 1 : 0
+  zone_id = var.route53_zone_id
+}
+
+resource "aws_route53_zone" "this" {
+  count = var.route53_zone_id == "" && var.domain_name != "" ? 1 : 0
+  name  = var.domain_name
+}
+
+resource "aws_route53_record" "api_a" {
+  count   = local.fqdn != "" ? 1 : 0
+  zone_id = var.route53_zone_id != "" ? data.aws_route53_zone.existing[0].zone_id : aws_route53_zone.this[0].zone_id
+  name    = local.fqdn
+  type    = "A"
+  ttl     = 300
+  records = [aws_eip.lightrag_eip.public_ip]
+
+  depends_on = [aws_eip.lightrag_eip]
+}
+
+output "api_fqdn" {
+  description = "FQDN for the API (DNS record)"
+  value       = local.fqdn != "" ? local.fqdn : null
+}
+
+output "api_fqdn_url" {
+  description = "Base URL served over HTTP (enable ALB/HTTPS for TLS)"
+  value       = local.fqdn != "" ? "http://${local.fqdn}:8000" : null
+}

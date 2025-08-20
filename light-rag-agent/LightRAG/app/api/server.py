@@ -89,6 +89,24 @@ _model_self_test: Dict[str, Any] | None = None
 _create_agent = None  # type: ignore
 _RAGDeps = None  # type: ignore
 
+# Простой performance logger fallback (используется чатом)
+class _PerfLogger:
+    def __init__(self):
+        self._timers: Dict[str, float] = {}
+    def start_timer(self, name: str):
+        import time
+        self._timers[name] = time.time()
+    def end_timer(self, name: str):
+        import time
+        if name in self._timers:
+            self._timers[name] = time.time() - self._timers[name]
+    def log_metric(self, *_, **__):
+        pass
+    def get_summary(self):
+        return self._timers
+
+performance_logger = _PerfLogger()
+
 
 class ChatRequest(BaseModel):
     message: str
@@ -313,31 +331,20 @@ async def health_check():
     response_model=ChatResponse,
     summary="Задать вопрос / продолжить диалог",
     description=(
-        "Главная точка взаимодействия с RAG. Принимает сообщение пользователя, опционально conversation_id для контекста и "
-        "system_prompt override. Возвращает ответ модели, id сессии и источники (если доступны). Требует JWT Bearer."
+        "Главная точка взаимодействия с RAG. Принимает JSON {message, optional conversation_id, model}. "
+        "system_prompt в запросе игнорируется (зафиксирован глобально). Возвращает ответ модели, id сессии и источники. Требует JWT Bearer."
     ),
 )
-# Простой performance logger fallback
-class _PerfLogger:
-    def __init__(self):
-        self._timers = {}
-    def start_timer(self, name: str):
-        import time
-        self._timers[name] = time.time()
-    def end_timer(self, name: str):
-        import time
-        if name in self._timers:
-            self._timers[name] = time.time() - self._timers[name]
-    def log_metric(self, *_, **__):
-        pass
-    def get_summary(self):
-        return self._timers
-
-performance_logger = _PerfLogger()
-
-async def chat_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
+async def chat_endpoint(
+    request: ChatRequest,
+    rag_mgr: RAGManager = Depends(get_rag_manager),
+    _claims=Depends(require_jwt),
+):
     performance_logger.start_timer("chat_request")
     conv_id = request.conversation_id or f"conv_{hash(request.message) % 10000}"
+    if not request.message or not request.message.strip():
+        performance_logger.end_timer("chat_request")
+        raise HTTPException(status_code=400, detail="'message' is required and cannot be empty")
     current_prompt = system_prompt  # игнорируем request.system_prompt теперь
     global _create_agent, _RAGDeps
     try:

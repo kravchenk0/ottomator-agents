@@ -17,10 +17,46 @@ RAG_CHUNK_SIZE='${RAG_CHUNK_SIZE}' RAG_CHUNK_OVERLAP='${RAG_CHUNK_OVERLAP}' APP_
 APP_MAX_CONVERSATION_HISTORY='${APP_MAX_CONVERSATION_HISTORY}' APP_ENABLE_STREAMING='${APP_ENABLE_STREAMING}' API_HOST='${API_HOST}' \
 API_PORT='${API_PORT}' API_CORS_ORIGINS='${API_CORS_ORIGINS}' API_ENABLE_DOCS='${API_ENABLE_DOCS}' API_RATE_LIMIT='${API_RATE_LIMIT}' \
 API_MAX_REQUEST_SIZE='${API_MAX_REQUEST_SIZE}' API_SECRET_KEY='${API_SECRET_KEY}' CORS_ALLOWED_ORIGINS='${CORS_ALLOWED_ORIGINS}' \
-GITHUB_TOKEN='${GITHUB_TOKEN}'
+GITHUB_TOKEN='${GITHUB_TOKEN}' ALLOWED_INGRESS_CIDRS='${ALLOWED_INGRESS_CIDRS}'
 E
 . /etc/profile.d/lightrag_env.sh || true
 yum install -y git curl >/dev/null 2>&1 || true
+
+# ---- Fail2ban installation & configuration (SSH protection) ----
+echo "[security] Installing fail2ban" | tee -a "$LF"
+if ! command -v fail2ban-server >/dev/null 2>&1; then
+  # Amazon Linux 2: enable EPEL for fail2ban
+  amazon-linux-extras install epel -y >>$LF 2>&1 || yum install -y epel-release >>$LF 2>&1 || true
+  yum install -y fail2ban >>$LF 2>&1 || echo "[security][WARN] fail2ban install failed" | tee -a "$LF"
+fi
+
+if command -v fail2ban-server >/dev/null 2>&1; then
+  IGNORE_IPS="127.0.0.1/8 ::1"
+  # Append allowed ingress CIDRs (if any) to ignoreip to prevent self-ban
+  if [ -n "$ALLOWED_INGRESS_CIDRS" ]; then
+    for ip in $ALLOWED_INGRESS_CIDRS; do
+      IGNORE_IPS="$IGNORE_IPS $ip"
+    done
+  fi
+  cat >/etc/fail2ban/jail.local <<EOF_F2B
+[DEFAULT]
+bantime = 15m
+findtime = 10m
+maxretry = 5
+backend = systemd
+ignoreip = $IGNORE_IPS
+
+[sshd]
+enabled = true
+port = ssh
+logpath = /var/log/secure
+EOF_F2B
+  systemctl enable fail2ban >>$LF 2>&1 || true
+  systemctl restart fail2ban >>$LF 2>&1 || true
+  echo "[security] fail2ban configured (ignore: $IGNORE_IPS)" | tee -a "$LF"
+else
+  echo "[security][WARN] fail2ban not installed; skipping configuration" | tee -a "$LF"
+fi
 cd /home/ec2-user || exit 1
 [ -z "$GITHUB_TOKEN" ] && echo "[stub][ERR] no GITHUB_TOKEN"|tee -a "$LF" && exit 1
 git clone https://$GITHUB_TOKEN@github.com/kravchenk0/ottomator-agents.git 2>>$LF || echo "[stub] clone skipped"|tee -a "$LF"

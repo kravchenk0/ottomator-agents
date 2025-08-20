@@ -181,6 +181,7 @@ export RAG_USER_RATE_WINDOW_SECONDS=3600        # Размер окна
 - `history_messages` – сколько сообщений сейчас хранится в диалоге
 - `history_context_chars` – длина переданного в prompt контекста
 - `rate_limit_remaining` – сколько запросов осталось в текущем окне
+- `rate_limit_reset_seconds` – через сколько секунд окно лимита сбросится
 
 Пример запроса с явным `conversation_id` для продолжения диалога:
 ```bash

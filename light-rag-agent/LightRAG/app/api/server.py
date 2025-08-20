@@ -124,6 +124,16 @@ def _rate_limit_remaining(user_id: str) -> int:
         return USER_RATE_LIMIT
     return max(0, USER_RATE_LIMIT - int(data["count"]))
 
+def _rate_limit_reset_in(user_id: str) -> int:
+    data = user_rate.get(user_id)
+    now = time.time()
+    if not data:
+        return USER_RATE_WINDOW_SECONDS
+    elapsed = now - data["window_start"]
+    if elapsed >= USER_RATE_WINDOW_SECONDS:
+        return 0
+    return int(USER_RATE_WINDOW_SECONDS - elapsed)
+
 def cleanup_expired_conversations() -> int:
     now = time.time()
     expired: List[str] = []
@@ -179,6 +189,8 @@ performance_logger = _PerfLogger()
 class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
+    # Частая опечатка: клиент мог отправить 'conversations'. Поддержим как deprecated alias.
+    conversations: Optional[str] = Field(default=None, description="Deprecated: use conversation_id")
     user_id: Optional[str] = None
     # system_prompt поле удалено из использования (оставим для обратной совместимости, но игнорируем)
     system_prompt: Optional[str] = None  # deprecated: игнорируется
@@ -424,7 +436,7 @@ async def chat_endpoint(
     _claims=Depends(require_jwt),
 ):
     performance_logger.start_timer("chat_request")
-    conv_id = request.conversation_id or f"conv_{hash(request.message) % 10000}"
+    conv_id = request.conversation_id or request.conversations or f"conv_{hash(request.message) % 10000}"
     if not request.message or not request.message.strip():
         performance_logger.end_timer("chat_request")
         raise HTTPException(status_code=400, detail="'message' is required and cannot be empty")
@@ -490,6 +502,7 @@ async def chat_endpoint(
                     "history_messages": len(msgs),
                     "history_context_chars": len(history_context) if history_context else 0,
                     "rate_limit_remaining": _rate_limit_remaining(user_id),
+                    "rate_limit_reset_seconds": _rate_limit_reset_in(user_id),
                 },
             )
         except Exception as run_err:  # noqa: BLE001
@@ -513,6 +526,7 @@ async def chat_endpoint(
             "history_messages": len(msgs),
             "history_context_chars": len(history_context) if history_context else 0,
                     "rate_limit_remaining": _rate_limit_remaining(user_id),
+                    "rate_limit_reset_seconds": _rate_limit_reset_in(user_id),
                 },
             )
     except Exception as outer:  # noqa: BLE001

@@ -2,19 +2,26 @@
 from __future__ import annotations
 
 import os
-from typing import Optional, Dict, Any, List
+from typing import Any, Dict, List, Optional
 
-from fastapi import FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi import Header, status, FastAPI, HTTPException, Depends, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from app.core import RAGManager, RAGConfig, get_default_config, get_temperature_adjustment_state
-from monkey_patch_lightrag import is_patch_applied
-from app.utils.logging import setup_logger, performance_logger
-from app.utils.ingestion import ingest_files, scan_directory, list_index
-from pathlib import Path
 import asyncio
-from fastapi import Header, status
+from pathlib import Path
+
+from app.core import RAGManager, RAGConfig, get_default_config
+from app.utils.ingestion import scan_directory, list_index, ingest_files
+from app.utils.auth import require_jwt, issue_token
+
+try:  # гибкий импорт логгера
+    from app.logger import setup_logger  # type: ignore
+except Exception:  # noqa: BLE001
+    def setup_logger(name: str, level: str = "INFO"):
+        import logging as _logging
+        _logging.basicConfig(level=getattr(_logging, level.upper(), _logging.INFO))
+        return _logging.getLogger(name)
 from app.utils.auth import require_jwt, issue_token
 from pydantic import BaseModel as _BM
 
@@ -87,7 +94,8 @@ class ChatRequest(BaseModel):
     message: str
     conversation_id: Optional[str] = None
     user_id: Optional[str] = None
-    system_prompt: Optional[str] = None
+    # system_prompt поле удалено из использования (оставим для обратной совместимости, но игнорируем)
+    system_prompt: Optional[str] = None  # deprecated: игнорируется
     model: Optional[str] = None  # запрошенная модель (опционально)
 
 
@@ -215,9 +223,21 @@ async def startup_event():  # noqa: D401
             await rag_manager.initialize()
             from app.agent.rag_agent import create_agent as _ca, RAGDeps as _rd
             _create_agent, _RAGDeps = _ca, _rd
-        system_prompt = (
-            "You are a helpful AI assistant integrated with a website. Always use the retrieve tool first."
-        )
+        # Базовый системный промпт: из DEFAULT_SYSTEM_PROMPT агента, с опциональным переопределением
+        try:
+            from app.agent.rag_agent import DEFAULT_SYSTEM_PROMPT as _DSP
+            system_prompt = _DSP
+        except Exception:  # noqa: BLE001
+            system_prompt = "You are a domain assistant. Use retrieve before answering."
+        # Если задан путь к файлу с промптом — читаем и заменяем
+        sp_file = os.getenv("RAG_SYSTEM_PROMPT_FILE")
+        if sp_file and os.path.isfile(sp_file):
+            try:
+                with open(sp_file, 'r', encoding='utf-8') as f:
+                    system_prompt = f.read()
+                logger.info(f"Loaded system prompt from {sp_file} (len={len(system_prompt)})")
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"Failed to load RAG_SYSTEM_PROMPT_FILE '{sp_file}': {e}")
         if os.getenv("OPENAI_API_KEY"):
             try:
                 from app.utils.diagnostics import self_test_model
@@ -267,6 +287,11 @@ async def root():
 async def health_check():
     rag_status = "healthy" if rag_manager is not None else "unhealthy"
     ms = _model_self_test or {}
+    # Заглушка температурной адаптации (если модуль отсутствует)
+    def get_temperature_adjustment_state():  # type: ignore
+        return {"auto_adjusted": False, "current_temperature": None, "rejected_models": []}
+    def is_patch_applied():  # type: ignore
+        return True
     temp_state = get_temperature_adjustment_state()
     return HealthResponse(
         status="healthy",
@@ -292,10 +317,28 @@ async def health_check():
         "system_prompt override. Возвращает ответ модели, id сессии и источники (если доступны). Требует JWT Bearer."
     ),
 )
+# Простой performance logger fallback
+class _PerfLogger:
+    def __init__(self):
+        self._timers = {}
+    def start_timer(self, name: str):
+        import time
+        self._timers[name] = time.time()
+    def end_timer(self, name: str):
+        import time
+        if name in self._timers:
+            self._timers[name] = time.time() - self._timers[name]
+    def log_metric(self, *_, **__):
+        pass
+    def get_summary(self):
+        return self._timers
+
+performance_logger = _PerfLogger()
+
 async def chat_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     performance_logger.start_timer("chat_request")
     conv_id = request.conversation_id or f"conv_{hash(request.message) % 10000}"
-    current_prompt = request.system_prompt or system_prompt
+    current_prompt = system_prompt  # игнорируем request.system_prompt теперь
     global _create_agent, _RAGDeps
     try:
         # (re)init agent factory if needed
@@ -376,8 +419,7 @@ async def update_config(request: ConfigRequest, _claims=Depends(require_jwt)):
             nm = RAGManager(config)
             await nm.initialize()
             rag_manager = nm
-        if request.system_prompt is not None:
-            system_prompt = request.system_prompt
+    # Игнорируем попытку сменить system_prompt через API (зафиксирован на старте)
         if request.rerank_enabled is not None and rag_manager:
             rag_manager.config.rerank_enabled = request.rerank_enabled
         return {

@@ -61,7 +61,10 @@ logger = setup_logger("api_server", "INFO")
 
 app = FastAPI(
     title="LightRAG API Server",
-    description="API server for LightRAG integration",
+    description=(
+        "REST API для интеграции с движком LightRAG: чат поверх встроенного RAG, загрузка/ингест документов, "
+        "поиск и администрирование. Большинство операций требуют JWT Bearer токен (см. /auth/token)."
+    ),
     version="1.0.0"
 )
 
@@ -176,12 +179,21 @@ async def startup_event():  # noqa: D401
             raise
 
 
-@app.get("/")
+@app.get(
+    "/",
+    summary="Ping / корневой статус",
+    description="Простой ping для проверки доступности сервера (без авторизации)."
+)
 async def root():
-    return {"status": "ok", "rag_initialized": rag_manager is not None}
+    return {"status": "ok", "rag_initialized": rag_manager is not None }
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.get(
+    "/health",
+    response_model=HealthResponse,
+    summary="Расширенный health-check",
+    description="Проверка статуса RAG, версии, модели и динамических параметров температуры. Доступно без авторизации."
+)
 async def health_check():
     rag_status = "healthy" if rag_manager is not None else "unhealthy"
     ms = _model_self_test or {}
@@ -201,7 +213,15 @@ async def health_check():
     )
 
 
-@app.post("/chat", response_model=ChatResponse)
+@app.post(
+    "/chat",
+    response_model=ChatResponse,
+    summary="Задать вопрос / продолжить диалог",
+    description=(
+        "Главная точка взаимодействия с RAG. Принимает сообщение пользователя, опционально conversation_id для контекста и "
+        "system_prompt override. Возвращает ответ модели, id сессии и источники (если доступны). Требует JWT Bearer."
+    ),
+)
 async def chat_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     performance_logger.start_timer("chat_request")
     conv_id = request.conversation_id or f"conv_{hash(request.message) % 10000}"
@@ -272,7 +292,12 @@ async def chat_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depends(get_
         )
 
 
-@app.post("/config", response_model=Dict[str, Any])
+@app.post(
+    "/config",
+    response_model=Dict[str, Any],
+    summary="Обновить конфигурацию RAG",
+    description="Изменить рабочую директорию, system prompt и флаг rerank_enabled. Перезапускает менеджер при смене working_dir. Требует JWT Bearer."
+)
 async def update_config(request: ConfigRequest, _claims=Depends(require_jwt)):
     global rag_manager, system_prompt
     try:
@@ -298,7 +323,11 @@ async def update_config(request: ConfigRequest, _claims=Depends(require_jwt)):
         raise HTTPException(status_code=500, detail=f"Failed to update configuration: {e}")
 
 
-@app.get("/config")
+@app.get(
+    "/config",
+    summary="Текущая конфигурация",
+    description="Получение текущих параметров RAG (working_dir, system_prompt, rerank_enabled). Требует JWT Bearer."
+)
 async def get_config(_claims=Depends(require_jwt)):
     return {
         "working_dir": rag_manager.config.working_dir if rag_manager else None,
@@ -307,7 +336,11 @@ async def get_config(_claims=Depends(require_jwt)):
     }
 
 
-@app.post("/documents/insert")
+@app.post(
+    "/documents/insert",
+    summary="Быстрая вставка текста",
+    description="Асинхронно добавляет один текстовый документ напрямую в индекс без загрузки файла. Требует JWT Bearer."
+)
 async def insert_document(content: str, document_id: Optional[str] = None, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     try:
         rag = await rag_mgr.get_rag()
@@ -317,7 +350,11 @@ async def insert_document(content: str, document_id: Optional[str] = None, rag_m
         raise HTTPException(status_code=500, detail=f"Failed to insert document: {e}")
 
 
-@app.get("/documents/search")
+@app.get(
+    "/documents/search",
+    summary="Поиск по индексированным документам",
+    description="Выполняет смешанный (mode=mix) запрос к RAG индексу. Возвращает сырые результаты движка. Требует JWT Bearer."
+)
 async def search_documents(query: str, limit: int = 5, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     try:
         rag = await rag_mgr.get_rag()
@@ -331,7 +368,11 @@ async def search_documents(query: str, limit: int = 5, rag_mgr: RAGManager = Dep
 _ingest_lock = asyncio.Lock()
 
 
-@app.post("/documents/upload")
+@app.post(
+    "/documents/upload",
+    summary="Загрузка файла",
+    description="Загружает файл (multipart/form-data) в raw_uploads и опционально сразу выполняет ingest (парсинг + индексирование). Требует JWT Bearer."
+)
 async def upload_document(file: UploadFile = File(...), ingest: bool = True, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     rag = await rag_mgr.get_rag()
     content_bytes = await file.read()
@@ -348,7 +389,11 @@ async def upload_document(file: UploadFile = File(...), ingest: bool = True, rag
     return {"status": "ok", "stored_as": str(dest), "ingestion": result}
 
 
-@app.post("/documents/ingest/scan")
+@app.post(
+    "/documents/ingest/scan",
+    summary="Скан + ingest директории",
+    description="Сканирует директорию (по умолчанию RAG_INGEST_DIR) и индексирует новые/обновлённые файлы. Требует JWT Bearer."
+)
 async def ingest_scan(directory: str | None = None, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     rag = await rag_mgr.get_rag()
     scan_dir = directory or os.getenv("RAG_INGEST_DIR", "/data/ingest")
@@ -360,7 +405,11 @@ async def ingest_scan(directory: str | None = None, rag_mgr: RAGManager = Depend
     return {"status": "ok", "directory": scan_dir, **result}
 
 
-@app.get("/documents/ingest/list")
+@app.get(
+    "/documents/ingest/list",
+    summary="Список индексированных документов",
+    description="Возвращает содержимое локального индекса (метаданные). Требует JWT Bearer."
+)
 async def ingest_list(rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     return {"status": "ok", "index": list_index(rag_mgr.config.working_dir)}
 
@@ -368,19 +417,32 @@ async def ingest_list(rag_mgr: RAGManager = Depends(get_rag_manager), _claims=De
 from app.utils.ingestion import delete_from_index, clear_index
 
 
-@app.post("/documents/ingest/delete")
+@app.post(
+    "/documents/ingest/delete",
+    summary="Удалить документы из индекса",
+    description="Удаляет перечисленные файлы из индекса по именам. Требует JWT Bearer."
+)
 async def ingest_delete(files: list[str], rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     result = delete_from_index(rag_mgr.config.working_dir, files)
     return {"status": "ok", **result}
 
 
-@app.post("/documents/ingest/clear")
+@app.post(
+    "/documents/ingest/clear",
+    summary="Очистить индекс",
+    description="Полностью очищает локальный индекс документов. Требует JWT Bearer."
+)
 async def ingest_clear(rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     result = clear_index(rag_mgr.config.working_dir)
     return {"status": "ok", **result}
 
 
-@app.post("/auth/token", response_model=TokenResponse)
+@app.post(
+    "/auth/token",
+    response_model=TokenResponse,
+    summary="Выдать JWT токен",
+    description="Генерация простого JWT (без подписки внешними ключами) по имени пользователя и роли. Используется для авторизации остальных эндпоинтов."
+)
 async def issue_jwt(req: TokenRequest):
     try:
         token = issue_token(req.user, {}, role=req.role)

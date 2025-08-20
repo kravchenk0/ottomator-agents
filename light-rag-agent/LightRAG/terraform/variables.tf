@@ -33,10 +33,22 @@ variable "subnet_cidr" {
   default     = "10.0.1.0/24"
 }
 
+variable "secondary_subnet_cidr" {
+  description = "CIDR block for secondary subnet (used when enable_alb=true)"
+  type        = string
+  default     = "10.0.2.0/24"
+}
+
 variable "availability_zone" {
   description = "Availability zone"
   type        = string
   default     = "me-south-1a"
+}
+
+variable "secondary_availability_zone" {
+  description = "Secondary availability zone (required when enable_alb=true)"
+  type        = string
+  default     = "me-south-1b"
 }
 
 variable "instance_type" {

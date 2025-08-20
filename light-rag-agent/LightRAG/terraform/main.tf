@@ -40,6 +40,17 @@ resource "aws_subnet" "lightrag_subnet" {
   }
 }
 
+resource "aws_subnet" "lightrag_subnet_secondary" {
+  count             = var.enable_alb ? 1 : 0
+  vpc_id            = aws_vpc.lightrag_vpc.id
+  cidr_block        = var.secondary_subnet_cidr
+  availability_zone = var.secondary_availability_zone
+
+  tags = {
+    Name = "${var.project_name}-subnet-secondary"
+  }
+}
+
 resource "aws_internet_gateway" "lightrag_igw" {
   vpc_id = aws_vpc.lightrag_vpc.id
 
@@ -66,9 +77,19 @@ resource "aws_route_table_association" "lightrag_rta" {
   route_table_id = aws_route_table.lightrag_rt.id
 }
 
+resource "aws_route_table_association" "lightrag_rta_secondary" {
+  count          = var.enable_alb ? 1 : 0
+  subnet_id      = aws_subnet.lightrag_subnet_secondary[0].id
+  route_table_id = aws_route_table.lightrag_rt.id
+}
+
 # Security Group
 locals {
-  ingress_ports = [
+  # Если включён ALB, инстанс не должен быть публично доступен на 80/443/8000.
+  # Оставляем только SSH (22) для администрирования. Доступ на 8000 даёт ALB через отдельное SG правило.
+  ingress_ports = var.enable_alb ? [
+    { from = 22, to = 22, description = "SSH" }
+  ] : [
     { from = 22,  to = 22,  description = "SSH" },
     { from = 80,  to = 80,  description = "HTTP" },
     { from = 443, to = 443, description = "HTTPS" },
@@ -224,7 +245,8 @@ resource "aws_route53_zone" "this" {
 }
 
 resource "aws_route53_record" "api_a" {
-  count   = local.fqdn != "" ? 1 : 0
+  # Создаём простую A-запись только если задан fqdn и ALB отключён
+  count   = local.fqdn != "" && !var.enable_alb ? 1 : 0
   zone_id = var.route53_zone_id != "" ? data.aws_route53_zone.existing[0].zone_id : aws_route53_zone.this[0].zone_id
   name    = local.fqdn
   type    = "A"
@@ -234,6 +256,19 @@ resource "aws_route53_record" "api_a" {
   depends_on = [aws_eip.lightrag_eip]
 }
 
+# Alias A record на ALB при включённом enable_alb
+resource "aws_route53_record" "api_alias" {
+  count   = local.fqdn != "" && var.enable_alb ? 1 : 0
+  zone_id = var.route53_zone_id != "" ? data.aws_route53_zone.existing[0].zone_id : aws_route53_zone.this[0].zone_id
+  name    = local.fqdn
+  type    = "A"
+  alias {
+    name                   = aws_lb.lightrag_alb[0].dns_name
+    zone_id                = aws_lb.lightrag_alb[0].zone_id
+    evaluate_target_health = false
+  }
+}
+
 output "api_fqdn" {
   description = "FQDN for the API (DNS record)"
   value       = local.fqdn != "" ? local.fqdn : null
@@ -241,5 +276,160 @@ output "api_fqdn" {
 
 output "api_fqdn_url" {
   description = "Base URL served over HTTP (enable ALB/HTTPS for TLS)"
-  value       = local.fqdn != "" ? "http://${local.fqdn}:8000" : null
+  value       = local.fqdn != "" && !var.enable_alb ? "http://${local.fqdn}:8000" : null
+}
+
+# -----------------------------
+# ALB + ACM (optional, enable with var.enable_alb=true)
+# -----------------------------
+
+locals {
+  certificate_domain = var.certificate_domain != "" ? var.certificate_domain : local.fqdn
+}
+
+# Security group for ALB
+resource "aws_security_group" "alb_sg" {
+  count       = var.enable_alb ? 1 : 0
+  name        = "${var.project_name}-alb-sg"
+  description = "ALB SG"
+  vpc_id      = aws_vpc.lightrag_vpc.id
+
+  ingress {
+    description = "HTTP"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  ingress {
+    description = "HTTPS"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+  tags = { Name = "${var.project_name}-alb-sg" }
+}
+
+# Suppress direct public ingress to port 8000 when ALB enabled by removing that rule from the dynamic block
+# Additional SG rule to allow ALB -> Instance on 8000
+resource "aws_security_group_rule" "instance_from_alb_8000" {
+  count                    = var.enable_alb ? 1 : 0
+  type                     = "ingress"
+  from_port                = 8000
+  to_port                  = 8000
+  protocol                 = "tcp"
+  security_group_id        = aws_security_group.lightrag_sg.id
+  source_security_group_id = aws_security_group.alb_sg[0].id
+  description              = "ALB to app port"
+}
+
+# ACM Certificate (DNS validation)
+resource "aws_acm_certificate" "api_cert" {
+  count                     = var.enable_alb && local.certificate_domain != "" ? 1 : 0
+  domain_name               = local.certificate_domain
+  validation_method         = "DNS"
+  subject_alternative_names = local.certificate_domain == local.fqdn ? [] : [local.fqdn]
+  lifecycle { create_before_destroy = true }
+  tags = { Name = "${var.project_name}-cert" }
+}
+
+resource "aws_route53_record" "cert_validation" {
+  for_each = var.enable_alb && local.certificate_domain != "" ? {
+    for dvo in aws_acm_certificate.api_cert[0].domain_validation_options : dvo.domain_name => {
+      name   = dvo.resource_record_name
+      type   = dvo.resource_record_type
+      record = dvo.resource_record_value
+    }
+  } : {}
+  name    = each.value.name
+  type    = each.value.type
+  zone_id = var.route53_zone_id != "" ? data.aws_route53_zone.existing[0].zone_id : aws_route53_zone.this[0].zone_id
+  records = [each.value.record]
+  ttl     = 300
+}
+
+resource "aws_acm_certificate_validation" "api_cert_validation" {
+  count                   = var.enable_alb && local.certificate_domain != "" ? 1 : 0
+  certificate_arn         = aws_acm_certificate.api_cert[0].arn
+  validation_record_fqdns = [for r in aws_route53_record.cert_validation : r.fqdn]
+}
+
+# Target group
+resource "aws_lb_target_group" "lightrag_tg" {
+  count    = var.enable_alb ? 1 : 0
+  name     = "${var.project_name}-tg"
+  port     = 8000
+  protocol = "HTTP"
+  vpc_id   = aws_vpc.lightrag_vpc.id
+  health_check {
+    path                = "/health"
+    matcher             = "200"
+    interval            = 30
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    timeout             = 5
+  }
+}
+
+resource "aws_lb_target_group_attachment" "tg_attachment" {
+  count            = var.enable_alb ? 1 : 0
+  target_group_arn = aws_lb_target_group.lightrag_tg[0].arn
+  target_id        = aws_instance.lightrag_instance.id
+  port             = 8000
+}
+
+resource "aws_lb" "lightrag_alb" {
+  count               = var.enable_alb ? 1 : 0
+  name                = "${var.project_name}-alb"
+  internal            = false
+  load_balancer_type  = "application"
+  security_groups     = [aws_security_group.alb_sg[0].id]
+  subnets             = [aws_subnet.lightrag_subnet.id, aws_subnet.lightrag_subnet_secondary[0].id]
+  enable_deletion_protection = false
+  tags = { Name = "${var.project_name}-alb" }
+}
+
+resource "aws_lb_listener" "http_redirect" {
+  count             = var.enable_alb ? 1 : 0
+  load_balancer_arn = aws_lb.lightrag_alb[0].arn
+  port              = 80
+  protocol          = "HTTP"
+  default_action {
+    type = "redirect"
+    redirect {
+      port        = "443"
+      protocol    = "HTTPS"
+      status_code = "HTTP_301"
+    }
+  }
+}
+
+resource "aws_lb_listener" "https" {
+  count             = var.enable_alb ? 1 : 0
+  load_balancer_arn = aws_lb.lightrag_alb[0].arn
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-2016-08"
+  certificate_arn   = aws_acm_certificate_validation.api_cert_validation[0].certificate_arn
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.lightrag_tg[0].arn
+  }
+  depends_on = [aws_acm_certificate_validation.api_cert_validation]
+}
+
+output "alb_dns_name" {
+  value       = var.enable_alb ? aws_lb.lightrag_alb[0].dns_name : null
+  description = "ALB DNS name"
+}
+output "api_https_url" {
+  value       = var.enable_alb && local.fqdn != "" ? "https://${local.fqdn}" : null
+  description = "HTTPS base URL via ALB"
 }

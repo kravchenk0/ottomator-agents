@@ -86,7 +86,7 @@ app = FastAPI(
 )
 
 # --- OpenAPI: добавить схему BearerAuth и пометить защищённые эндпоинты ---
-_OPEN_ENDPOINTS = {("GET", "/health"), ("GET", "/alb-health"), ("POST", "/auth/token")}
+_OPEN_ENDPOINTS = {("GET", "/health"), ("GET", "/alb-health")}  # /auth/token теперь защищён ApiKey
 
 def custom_openapi():  # type: ignore
     if app.openapi_schema:
@@ -97,21 +97,27 @@ def custom_openapi():  # type: ignore
         description=app.description,
         routes=app.routes,
     )
-    # Добавляем security scheme
-    schema.setdefault("components", {}).setdefault("securitySchemes", {})["BearerAuth"] = {
+    # Добавляем security schemes
+    components = schema.setdefault("components", {}).setdefault("securitySchemes", {})
+    components["BearerAuth"] = {
         "type": "http",
         "scheme": "bearer",
         "bearerFormat": "JWT"
+    }
+    components["ApiKeyAuth"] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-API-Key"
     }
     # Применяем ко всем кроме открытых
     for path, methods in schema.get("paths", {}).items():
         for method, spec in methods.items():
             key = (method.upper(), path)
             if key in _OPEN_ENDPOINTS:
-                # явно указываем пустую security, чтобы Swagger не требовал токен
-                spec["security"] = []
+                spec["security"] = []  # полностью открыто
+            elif path == "/auth/token" and method.upper() == "POST":
+                spec["security"] = [{"ApiKeyAuth": []}]
             else:
-                # добавляем если ещё нет
                 spec.setdefault("security", [{"BearerAuth": []}])
     app.openapi_schema = schema
     return schema
@@ -777,10 +783,10 @@ async def ingest_clear(rag_mgr: RAGManager = Depends(get_rag_manager), _claims=D
 @app.post(
     "/auth/token",
     response_model=TokenResponse,
-    summary="Выдать JWT токен",
-    description="Генерация простого JWT (без подписки внешними ключами) по имени пользователя и роли. Используется для авторизации остальных эндпоинтов."
+    summary="Выдать JWT токен (требует X-API-Key)",
+    description="Генерация JWT. Теперь требует валидный X-API-Key, настроенный в RAG_API_KEYS/RAG_API_KEY."
 )
-async def issue_jwt(req: TokenRequest):
+async def issue_jwt(req: TokenRequest, _api=Depends(require_api_key)):
     try:
         token = issue_token(req.user, {}, role=req.role)
         return TokenResponse(access_token=token, role=req.role)

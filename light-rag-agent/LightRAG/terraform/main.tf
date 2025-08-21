@@ -181,6 +181,7 @@ resource "aws_instance" "lightrag_instance" {
     CORS_ALLOWED_ORIGINS        = "*"
     GITHUB_TOKEN                = var.github_token
   RAG_JWT_SECRET              = var.rag_jwt_secret
+  RAG_API_KEYS                = var.rag_api_keys
   ALLOWED_INGRESS_CIDRS       = join(" ", var.allowed_ingress_cidrs)
   })
 

@@ -84,6 +84,12 @@ variable "rag_jwt_secret" {
   type        = string
 }
 
+variable "rag_api_keys" {
+  description = "Comma-separated list of API keys for /auth/token (RAG_API_KEYS)"
+  type        = string
+  default     = "" # оставить пустым => выдача токенов отключится (strict зависимость вернёт 503)
+}
+
 variable "domain_name" {
   description = "Domain name for the app"
   type        = string

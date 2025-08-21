@@ -131,7 +131,12 @@ services:
       start_period: 40s
 EOF
 
-# 8. Build & run
+# 8. Ensure host-mounted dirs exist and are writable for container user
+mkdir -p ./documents/raw_uploads ./logs || true
+# Broad permissions to avoid UID/GID mismatch issues between host and container
+chmod -R 0777 ./documents ./logs || true
+
+# 9. Build & run
 echo "[build] building image"
 docker build -t lightrag-api:latest . || exit 1
 if docker compose version >/dev/null 2>&1; then
@@ -142,7 +147,7 @@ else
   echo "[ERROR] no docker compose"; exit 1
 fi
 
-# 9. Health wait
+# 10. Health wait
 for i in $(seq 1 30); do
   if curl -sf http://localhost:8000/health >/dev/null; then echo "API healthy (attempt $i)"; break; fi
   sleep 2

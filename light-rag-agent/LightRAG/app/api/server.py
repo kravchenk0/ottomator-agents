@@ -341,12 +341,12 @@ conversations: Dict[str, List[Dict[str, str]]] = {}
 conversation_meta: Dict[str, Dict[str, float]] = {}  # {id: {created, last_activity}}
 MAX_HISTORY_MESSAGES = int(os.getenv("RAG_MAX_HISTORY_MESSAGES", "12"))  # обрезаем глубину
 CONVERSATION_TTL_SECONDS = int(os.getenv("RAG_CONVERSATION_TTL_SECONDS", "3600"))  # 1 час по умолчанию
-ASYNC_HISTORY_THRESHOLD = int(os.getenv("RAG_HISTORY_ASYNC_THRESHOLD", "80"))  # порог длины (сообщений) для offload
+ASYNC_HISTORY_THRESHOLD = int(os.getenv("RAG_HISTORY_ASYNC_THRESHOLD", "20"))  # порог длины (сообщений) для offload
 USER_RATE_LIMIT = int(os.getenv("RAG_USER_RATE_LIMIT", "10"))  # 10 запросов / окно
 USER_RATE_WINDOW_SECONDS = int(os.getenv("RAG_USER_RATE_WINDOW_SECONDS", "3600"))
 user_rate: Dict[str, Dict[str, float]] = {}  # {user_id: {count, window_start}}
 _cleanup_task = None  # background task handler
-CONVERSATION_CLEANUP_INTERVAL = int(os.getenv("RAG_CONVERSATION_CLEANUP_INTERVAL", "60"))
+CONVERSATION_CLEANUP_INTERVAL = int(os.getenv("RAG_CONVERSATION_CLEANUP_INTERVAL", "300"))
 
 def _enforce_user_rate_limit(user_id: str):
     now = time.time()
@@ -385,9 +385,18 @@ def _rate_limit_reset_in(user_id: str) -> int:
 def cleanup_expired_conversations() -> int:
     now = time.time()
     expired: List[str] = []
-    for cid, meta in list(conversation_meta.items()):
-        if now - meta.get("last_activity", meta.get("created", now)) > CONVERSATION_TTL_SECONDS:
-            expired.append(cid)
+    # Оптимизация: проверяем только если есть диалоги для проверки
+    if not conversation_meta:
+        return 0
+    # Батчевая обработка для больших объемов
+    batch_size = 100
+    items = list(conversation_meta.items())
+    for i in range(0, len(items), batch_size):
+        batch = items[i:i + batch_size]
+        for cid, meta in batch:
+            if now - meta.get("last_activity", meta.get("created", now)) > CONVERSATION_TTL_SECONDS:
+                expired.append(cid)
+    # Удаляем батчем
     for cid in expired:
         conversations.pop(cid, None)
         conversation_meta.pop(cid, None)
@@ -775,7 +784,12 @@ async def chat_endpoint(
         deps = _RAGDeps(rag_manager=rag_mgr)
         try:
             if phase: phase.start("agent_run")
-            result = await agent.run(request.message, deps=deps)
+            # Добавляем таймаут для agent.run() чтобы избежать 504
+            agent_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "45"))
+            result = await asyncio.wait_for(
+                agent.run(request.message, deps=deps),
+                timeout=agent_timeout
+            )
             if phase: phase.end("agent_run")
             try:
                 sources = getattr(result, 'metadata', {}).get('sources') if getattr(result, 'metadata', None) else None
@@ -805,6 +819,20 @@ async def chat_endpoint(
             if DETAILED_METRICS_ENABLED:
                 await _log_chat_event("result", {"request_id": _cv_request_id.get(), "conversation_id": conv_id, "history_messages": len(msgs)})
             return resp
+        except asyncio.TimeoutError:
+            performance_logger.end_timer("chat_request")
+            resp = ChatResponse(
+                response="Запрос занял слишком много времени. Попробуйте упростить вопрос или повторить позже.",
+                conversation_id=conv_id,
+                error="TIMEOUT: Agent execution timed out",
+                metadata={
+                    "user_id": user_id,
+                    "model": request.model or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL"),
+                    "timeout_seconds": agent_timeout,
+                    "request_id": _cv_request_id.get(),
+                },
+            )
+            return resp
         except Exception as run_err:  # noqa: BLE001
             performance_logger.end_timer("chat_request")
             err_str = str(run_err)
@@ -813,6 +841,8 @@ async def chat_endpoint(
                 code = "MODEL_NOT_FOUND"
             elif "rate limit" in err_str.lower():
                 code = "RATE_LIMIT"
+            elif "timeout" in err_str.lower():
+                code = "TIMEOUT"
             else:
                 code = "EXECUTION_ERROR"
             resp = ChatResponse(
@@ -1157,9 +1187,13 @@ async def chat_stream_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depen
         rid = _cv_request_id.get() or "unknown"
         yield f"data: {{\"status\":\"started\",\"request_id\":\"{rid}\"}}\n\n"
         try:
-            # Запуск основного выполнения
+            # Запуск основного выполнения с таймаутом
             if phase: phase.start("agent_run")
-            result = await agent.run(request.message, deps=deps)
+            agent_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "45"))
+            result = await asyncio.wait_for(
+                agent.run(request.message, deps=deps),
+                timeout=agent_timeout
+            )
             if phase: phase.end("agent_run")
             msgs.append({"role": "assistant", "content": result.data})
             meta["last_activity"] = time.time()
@@ -1174,6 +1208,9 @@ async def chat_stream_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depen
                     "history_messages": len(msgs)
                 }) + "\n\n"
             )
+        except asyncio.TimeoutError:
+            performance_logger.end_timer("chat_request_stream")
+            yield "data: {\"status\":\"timeout\",\"error\": \"Request timed out\"}\n\n"
         except Exception as e:  # noqa: BLE001
             performance_logger.end_timer("chat_request_stream")
             yield "data: {\"status\":\"error\",\"error\": " + __import__("json").dumps(str(e)) + "}\n\n"

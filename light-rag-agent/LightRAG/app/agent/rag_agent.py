@@ -9,9 +9,11 @@ import sys
 import argparse
 import asyncio
 import logging
+import hashlib
+import time
 from functools import lru_cache
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional, List, Dict, Tuple
 
 from pydantic_ai import RunContext
 from pydantic_ai.agent import Agent
@@ -20,6 +22,10 @@ from lightrag import QueryParam
 from app.core import RAGManager, RAGConfig, get_default_config
 
 logger = logging.getLogger(__name__)
+
+# Простой in-memory кэш для RAG запросов
+RAG_CACHE_TTL = int(os.getenv("RAG_CACHE_TTL_SECONDS", "300"))  # 5 минут
+_rag_cache: Dict[str, Tuple[str, float]] = {}  # {query_hash: (result, timestamp)}
 
 DEFAULT_SYSTEM_PROMPT = (
 	"""Вы - узкопрофильный консультант по свободным экономическим зонам Дубая. Вы совмещаете две компетенции:
@@ -65,13 +71,65 @@ def resolve_agent_model(explicit: Optional[str] = None) -> str:
 	return base
 
 
+def _get_cache_key(search_query: str) -> str:
+	"""Генерирует ключ кэша для запроса."""
+	return hashlib.md5(search_query.encode('utf-8')).hexdigest()
+
+def _get_cached_result(search_query: str) -> Optional[str]:
+	"""Получает результат из кэша, если он актуален."""
+	cache_key = _get_cache_key(search_query)
+	if cache_key in _rag_cache:
+		result, timestamp = _rag_cache[cache_key]
+		if time.time() - timestamp < RAG_CACHE_TTL:
+			return result
+		else:
+			# Удаляем просроченный результат
+			del _rag_cache[cache_key]
+	return None
+
+def _cache_result(search_query: str, result: str) -> None:
+	"""Кэширует результат запроса."""
+	cache_key = _get_cache_key(search_query)
+	_rag_cache[cache_key] = (result, time.time())
+	# Простая очистка: если кэш слишком большой, удаляем старые записи
+	if len(_rag_cache) > 1000:
+		now = time.time()
+		expired_keys = [k for k, (_, ts) in _rag_cache.items() if now - ts > RAG_CACHE_TTL]
+		for k in expired_keys:
+			del _rag_cache[k]
+
 def _register_tools(agent: Agent) -> Agent:
 	@agent.tool
 	async def retrieve(context: RunContext[RAGDeps], search_query: str) -> str:  # type: ignore
 		try:
 			logger.debug(f"[retrieve] start query='{search_query}'")
+			
+			# Проверяем кэш
+			cached_result = _get_cached_result(search_query)
+			if cached_result is not None:
+				logger.debug("[retrieve] cache hit")
+				return cached_result
+			
+			# Выполняем запрос с таймаутом
 			rag = await context.deps.rag_manager.get_rag()
-			result = await rag.aquery(search_query, param=QueryParam(mode="mix"))
+			retrieve_timeout = int(os.getenv("RAG_RETRIEVE_TIMEOUT_SECONDS", "15"))
+			
+			try:
+				result = await asyncio.wait_for(
+					rag.aquery(search_query, param=QueryParam(mode="mix")),
+					timeout=retrieve_timeout
+				)
+			except asyncio.TimeoutError:
+				logger.warning(f"[retrieve] timeout after {retrieve_timeout}s, using fast fallback")
+				# Быстрый fallback: возвращаем сообщение о том, что поиск занял слишком много времени
+				fallback_msg = f"Поиск по запросу '{search_query}' занял слишком много времени. Попробуйте упростить запрос."
+				_cache_result(search_query, fallback_msg)
+				return fallback_msg
+			
+			# Преобразуем результат в строку для кэширования
+			result_str = str(result)
+			_cache_result(search_query, result_str)
+			
 			# Лёгкая диагностика структуры результата
 			try:  # noqa: SIM105
 				if isinstance(result, list):
@@ -88,7 +146,7 @@ def _register_tools(agent: Agent) -> Agent:
 	return agent
 
 
-@lru_cache(maxsize=32)
+@lru_cache(maxsize=256)
 def create_agent(model: Optional[str] = None, system_prompt: Optional[str] = None) -> Agent:
 	resolved_model = resolve_agent_model(model)
 	sp = system_prompt or DEFAULT_SYSTEM_PROMPT

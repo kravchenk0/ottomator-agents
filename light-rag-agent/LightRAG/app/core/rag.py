@@ -91,11 +91,13 @@ async def dynamic_openai_complete(prompt: str, *args, **kwargs) -> str:  # noqa:
 		temperature = float(os.getenv("OPENAI_TEMPERATURE", "0") or 0)
 	except ValueError:
 		temperature = 0.0
-	client = AsyncOpenAI(api_key=api_key)
+	# Добавляем таймаут для OpenAI запросов
+	timeout_seconds = int(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
+	client = AsyncOpenAI(api_key=api_key, timeout=timeout_seconds)
 	last_error: Exception | None = None
 	for model_name in models_to_try:
 		try:
-			logger.debug(f"dynamic_openai_complete: trying model={model_name}")
+			logger.debug(f"dynamic_openai_complete: trying model={model_name} with timeout={timeout_seconds}s")
 			def _messages():
 				return [
 					{"role": "system", "content": kwargs.get("system_prompt", "You are a helpful assistant.")},
@@ -104,9 +106,18 @@ async def dynamic_openai_complete(prompt: str, *args, **kwargs) -> str:  # noqa:
 			omit_temp = model_name in _models_reject_any_temp
 			try:
 				if not omit_temp:
-					resp = await client.chat.completions.create(model=model_name, messages=_messages(), temperature=temperature)
+					resp = await client.chat.completions.create(
+						model=model_name, 
+						messages=_messages(), 
+						temperature=temperature,
+						timeout=timeout_seconds
+					)
 				else:
-					resp = await client.chat.completions.create(model=model_name, messages=_messages())
+					resp = await client.chat.completions.create(
+						model=model_name, 
+						messages=_messages(),
+						timeout=timeout_seconds
+					)
 			except Exception as e:  # noqa: BLE001
 				es = str(e)
 				if ("Unsupported value" in es or "unsupported_value" in es) and "temperature" in es:
@@ -114,7 +125,11 @@ async def dynamic_openai_complete(prompt: str, *args, **kwargs) -> str:  # noqa:
 					if not _temperature_auto_adjust_done:
 						logger.warning("Auto-adjust: model rejected explicit temperature; omitting going forward.")
 						_temperature_auto_adjust_done = True
-					resp = await client.chat.completions.create(model=model_name, messages=_messages())
+					resp = await client.chat.completions.create(
+						model=model_name, 
+						messages=_messages(),
+						timeout=timeout_seconds
+					)
 				else:
 					raise
 			content = resp.choices[0].message.content if resp.choices else ""

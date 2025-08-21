@@ -77,6 +77,16 @@ def require_api_key(x_api_key: str | None = Header(default=None)):
 def require_api_key_sec(x_api_key: str | None = Header(default=None)):
     return require_api_key(x_api_key)
 
+# Строгая версия: всегда требует наличие непустого списка ключей и корректный header.
+def require_api_key_strict(x_api_key: str | None = Header(default=None)):
+    keys = _load_api_keys()
+    if not keys:
+        # Конфигурация отсутствует – считаем это ошибкой конфигурации
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="API key auth not configured (set RAG_API_KEYS)")
+    if not x_api_key or x_api_key not in keys:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing API key")
+    return True
+
 
 logger = setup_logger("api_server", "INFO")
 
@@ -792,7 +802,7 @@ async def ingest_clear(rag_mgr: RAGManager = Depends(get_rag_manager), _claims=D
     summary="Выдать JWT токен (требует X-API-Key)",
     description="Генерация JWT. Требует валидный X-API-Key (RAG_API_KEYS/RAG_API_KEY)."
 )
-async def issue_jwt(req: TokenRequest, _api=Security(require_api_key_sec)):
+async def issue_jwt(req: TokenRequest, _api=Security(require_api_key_strict)):
     try:
         token = issue_token(req.user, {}, role=req.role)
         return TokenResponse(access_token=token, role=req.role)

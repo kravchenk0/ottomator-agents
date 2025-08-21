@@ -1,55 +1,39 @@
 #!/bin/bash
-
-# User data script for LightRAG EC2 instance
-# This script runs when the instance first boots
-
-set -e
-
-#!/bin/bash
-set -e
-LF=/var/log/lightrag-user-data.log;echo "[stub] start"|tee -a "$LF"
-#!/bin/bash
+# LightRAG user_data (Terraform templatefile). Placeholders ${OPENAI_API_KEY} и др. заменяются Terraform.
 set -euo pipefail
 LOG=/var/log/lightrag-user-data.log
-exec >>$LOG 2>&1
+exec >>"$LOG" 2>&1
 echo "===== user_data start $(date -u) ====="
 
+# 1. Base deps
 if command -v dnf >/dev/null 2>&1; then dnf install -y git curl docker >/dev/null 2>&1 || true; else yum install -y git curl docker >/dev/null 2>&1 || true; fi
 systemctl enable docker || true
 systemctl start docker || true
 
-# Install docker compose plugin if absent
-install_compose() {
-  local ver="v2.27.0"
+# 2. Docker compose plugin (avoid ${var} so Terraform doesn't expect key)
+VER=v2.27.0
+if ! docker compose version >/dev/null 2>&1; then
+  echo "[compose] installing plugin $VER"
   mkdir -p /usr/local/lib/docker/cli-plugins
   curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
-    https://github.com/docker/compose/releases/download/${ver}/docker-compose-linux-x86_64 || return 1
-  chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
-  echo "[compose] installed ${ver}";
-}
-if ! docker compose version >/dev/null 2>&1; then
-  echo "[compose] plugin missing, installing..."
-  install_compose || echo "[compose][WARN] install failed"
+    "https://github.com/docker/compose/releases/download/$VER/docker-compose-linux-x86_64" && \
+    chmod +x /usr/local/lib/docker/cli-plugins/docker-compose || echo "[compose][WARN] install failed"
 fi
 
-# Docker socket permissions & group access for ec2-user
-if ! getent group docker >/dev/null 2>&1; then
-  groupadd docker || true
-fi
+# 3. Socket perms
+if ! getent group docker >/dev/null 2>&1; then groupadd docker || true; fi
 usermod -aG docker ec2-user || true
-# Wait for socket and fix perms so current and future sessions of ec2-user have access
 for i in $(seq 1 15); do
   if [ -S /var/run/docker.sock ]; then
     chgrp docker /var/run/docker.sock || true
     chmod 660 /var/run/docker.sock || true
-    # extra ACL (не критично, но гарантирует rw даже если группа сменится)
     command -v setfacl >/dev/null 2>&1 && setfacl -m u:ec2-user:rw /var/run/docker.sock || true
-    echo "[docker-perms] adjusted at attempt $i"; break
+    break
   fi
   sleep 1
 done
-id ec2-user || true
 
+# 4. Env export
 cat >/etc/profile.d/lightrag_env.sh <<EOF
 export OPENAI_API_KEY='${OPENAI_API_KEY}'
 export OPENAI_MODEL='${OPENAI_MODEL}'
@@ -81,6 +65,7 @@ export GITHUB_TOKEN='${GITHUB_TOKEN}'
 EOF
 . /etc/profile.d/lightrag_env.sh || true
 
+# 5. Source code
 cd /home/ec2-user
 if [ -z "$GITHUB_TOKEN" ]; then echo "[FATAL] GITHUB_TOKEN missing"; exit 1; fi
 git clone https://$GITHUB_TOKEN@github.com/kravchenk0/ottomator-agents.git repo || true
@@ -89,6 +74,7 @@ mkdir -p "$WORKDIR"
 cp -r repo/light-rag-agent/LightRAG/* "$WORKDIR"/ || true
 cd "$WORKDIR"
 
+# 6. Runtime .env
 cat > .env <<EOF
 OPENAI_API_KEY=${OPENAI_API_KEY}
 OPENAI_MODEL=${OPENAI_MODEL}
@@ -118,6 +104,7 @@ RAG_JWT_EXPIRE_SECONDS=3600
 RAG_REQUIRE_JWT=1
 EOF
 
+# 7. Compose file
 cat > docker-compose.prod.yml <<EOF
 version: '3.8'
 services:
@@ -142,6 +129,7 @@ services:
       start_period: 40s
 EOF
 
+# 8. Build & run
 echo "[build] building image"
 docker build -t lightrag-api:latest . || exit 1
 if docker compose version >/dev/null 2>&1; then
@@ -149,56 +137,12 @@ if docker compose version >/dev/null 2>&1; then
 elif command -v docker-compose >/dev/null 2>&1; then
   docker-compose -f docker-compose.prod.yml up -d
 else
-  echo "[ERROR] docker compose not available"; exit 1
+  echo "[ERROR] no docker compose"; exit 1
 fi
 
-echo "[health] waiting for API"
+# 9. Health wait
 for i in $(seq 1 30); do
   if curl -sf http://localhost:8000/health >/dev/null; then echo "API healthy (attempt $i)"; break; fi
-  sleep 2
-  [ $i -eq 30 ] && echo "[WARN] API not healthy after attempts" || true
-done
-
-echo "===== user_data end $(date -u) ====="
-RAG_REQUIRE_JWT=1
-EOF
-
-# 5. docker-compose
-cat > docker-compose.prod.yml <<EOF
-version: '3.8'
-services:
-  api:
-    build: .
-    container_name: lightrag-api
-    restart: unless-stopped
-    ports:
-      - "8000:8000"
-    env_file: .env
-    environment:
-      RAG_JWT_SECRET: ${RAG_JWT_SECRET}
-      RAG_REQUIRE_JWT: 1
-    volumes:
-      - ./documents:/app/documents
-      - ./logs:/app/logs
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 40s
-EOF
-
-# 6. Build & run
-echo "Building image..."
-docker build -t lightrag-api:latest . || exit 1
-echo "Starting compose..."
-docker compose -f docker-compose.prod.yml up -d || docker-compose -f docker-compose.prod.yml up -d
-
-# 7. Wait health (max ~60s)
-for i in $(seq 1 30); do
-  if curl -sf http://localhost:8000/health >/dev/null; then
-    echo "API healthy in $i attempts"; break
-  fi
   sleep 2
 done
 

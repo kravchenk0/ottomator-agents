@@ -68,6 +68,12 @@ variable "ami_id" {
   type        = string
   default     = ""
 }
+
+variable "use_amazon_linux_2023" {
+  description = "If true and ami_id not set, use latest Amazon Linux 2023 AMI (al2023) instead of Amazon Linux 2"
+  type        = bool
+  default     = false
+}
 variable "openai_api_key" {
   description = "OpenAI API key"
   type        = string
@@ -106,6 +112,12 @@ variable "certificate_domain" {
   description = "Certificate domain for ACM"
   type        = string
   default     = ""
+}
+
+variable "alb_health_check_interval" {
+  description = "Interval (seconds) for ALB target group health checks (5-300). Lower = faster detection, higher = less cost/noise."
+  type        = number
+  default     = 15
 }
 
 variable "create_vpc" {

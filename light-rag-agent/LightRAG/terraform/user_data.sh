@@ -20,14 +20,27 @@ API_MAX_REQUEST_SIZE='${API_MAX_REQUEST_SIZE}' API_SECRET_KEY='${API_SECRET_KEY}
 GITHUB_TOKEN='${GITHUB_TOKEN}' RAG_JWT_SECRET='${RAG_JWT_SECRET}' ALLOWED_INGRESS_CIDRS='${ALLOWED_INGRESS_CIDRS}'
 E
 . /etc/profile.d/lightrag_env.sh || true
-yum install -y git curl >/dev/null 2>&1 || true
+if command -v dnf >/dev/null 2>&1; then
+  dnf install -y git curl >/dev/null 2>&1 || true
+else
+  yum install -y git curl >/dev/null 2>&1 || true
+fi
 
 # ---- Fail2ban installation & configuration (SSH protection) ----
 echo "[security] Installing fail2ban" | tee -a "$LF"
 if ! command -v fail2ban-server >/dev/null 2>&1; then
-  # Amazon Linux 2: enable EPEL for fail2ban
-  amazon-linux-extras install epel -y >>$LF 2>&1 || yum install -y epel-release >>$LF 2>&1 || true
-  yum install -y fail2ban >>$LF 2>&1 || echo "[security][WARN] fail2ban install failed" | tee -a "$LF"
+  # Amazon Linux 2 uses amazon-linux-extras for epel; AL2023 uses dnf directly (no amazon-linux-extras)
+  if command -v amazon-linux-extras >/dev/null 2>&1; then
+    amazon-linux-extras install epel -y >>$LF 2>&1 || yum install -y epel-release >>$LF 2>&1 || true
+    yum install -y fail2ban >>$LF 2>&1 || echo "[security][WARN] fail2ban install failed (AL2 path)" | tee -a "$LF"
+  else
+    # AL2023 path
+    if command -v dnf >/dev/null 2>&1; then
+      dnf install -y fail2ban >>$LF 2>&1 || echo "[security][WARN] fail2ban install failed (AL2023 path)" | tee -a "$LF"
+    else
+      yum install -y fail2ban >>$LF 2>&1 || echo "[security][WARN] fail2ban install failed (generic path)" | tee -a "$LF"
+    fi
+  fi
 fi
 
 if command -v fail2ban-server >/dev/null 2>&1; then
@@ -63,10 +76,13 @@ git clone https://$GITHUB_TOKEN@github.com/kravchenk0/ottomator-agents.git 2>>$L
 chown -R ec2-user:ec2-user ottomator-agents || true
 bash /home/ec2-user/ottomator-agents/light-rag-agent/LightRAG/terraform/bootstrap.sh >>$LF 2>&1 &
 echo "[stub] bootstrap pid=$!"|tee -a "$LF"
+# Ожидаем появления docker.sock (до 30 секунд) и чиним права
+for i in $(seq 1 30); do
   if [ -S /var/run/docker.sock ]; then
     chgrp docker /var/run/docker.sock || true
     chmod 660 /var/run/docker.sock || true
     setfacl -m u:ec2-user:rw /var/run/docker.sock || true
+    echo "[stub] docker socket perms adjusted (attempt $i)" | tee -a "$LF"
     break
   fi
   sleep 1

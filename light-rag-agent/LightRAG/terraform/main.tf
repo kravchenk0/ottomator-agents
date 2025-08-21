@@ -13,10 +13,16 @@ provider "aws" {
   profile = var.aws_profile
 }
 
-# Latest Amazon Linux 2 kernel 5.10 x86_64 AMI via public SSM parameter (region-specific automatically).
-# If var.ami_id is provided (non-empty), that value takes precedence (e.g., for a custom baked image).
+# Amazon Linux AMIs via SSM parameters (region-specific automatically).
+#  - Amazon Linux 2 (kernel 5.10) default
+#  - Amazon Linux 2023 (optionally via var.use_amazon_linux_2023)
+# If var.ami_id provided (non-empty) it always takes precedence.
 data "aws_ssm_parameter" "amzn2" {
   name = "/aws/service/ami-amazon-linux-latest/amzn2-ami-kernel-5.10-hvm-x86_64-gp2"
+}
+
+data "aws_ssm_parameter" "al2023" {
+  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
 }
 
 # VPC and Networking
@@ -134,7 +140,7 @@ resource "aws_key_pair" "lightrag_key" {
 
 # EC2 Instance
 resource "aws_instance" "lightrag_instance" {
-  ami                    = var.ami_id != "" ? var.ami_id : data.aws_ssm_parameter.amzn2.value
+  ami = var.ami_id != "" ? var.ami_id : (var.use_amazon_linux_2023 ? data.aws_ssm_parameter.al2023.value : data.aws_ssm_parameter.amzn2.value)
   instance_type          = var.instance_type
   key_name               = aws_key_pair.lightrag_key.key_name
   subnet_id              = aws_subnet.lightrag_subnet.id
@@ -328,6 +334,8 @@ resource "aws_security_group_rule" "instance_from_alb_8000" {
   security_group_id        = aws_security_group.lightrag_sg.id
   source_security_group_id = aws_security_group.alb_sg[0].id
   description              = "ALB to app port"
+  # Явная зависимость: сначала должен существовать SG ALB, затем правило
+  depends_on = [aws_security_group.alb_sg]
 }
 
 # ACM Certificate (DNS validation)
@@ -370,11 +378,11 @@ resource "aws_lb_target_group" "lightrag_tg" {
   vpc_id   = aws_vpc.lightrag_vpc.id
   health_check {
   path                = "/health"
-    matcher             = "200"
-    interval            = 30
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
-    timeout             = 5
+  matcher             = "200"
+  interval            = var.alb_health_check_interval
+  healthy_threshold   = 2
+  unhealthy_threshold = 3
+  timeout             = 5
   }
 }
 

@@ -113,8 +113,12 @@ def verify_token(token: str) -> Dict[str, Any]:
 
 
 def require_jwt(authorization: str | None = Header(default=None)):
-    if not _jwt_cfg.enabled():  # open mode
-        return {"sub": "open", "role": "open"}
+    # Если секрет не задан и не требуется строго – работаем в open режиме.
+    # Если включён флаг строгого режима (RAG_REQUIRE_JWT=1) – блокируем доступ.
+    if not _jwt_cfg.enabled():  # open mode unless strict required
+        if os.getenv("RAG_REQUIRE_JWT", "0").lower() in {"1", "true", "yes"}:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="JWT auth disabled (set RAG_JWT_SECRET)")
+        return {"sub": "open", "role": "open", "mode": "open"}
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing Bearer token")
     token = authorization.split(" ", 1)[1].strip()

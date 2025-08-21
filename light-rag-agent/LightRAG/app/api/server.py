@@ -13,6 +13,14 @@ import asyncio
 from pathlib import Path
 
 from app.core import RAGManager, RAGConfig, get_default_config
+try:  # автозагрузка .env если присутствует (локальная разработка)
+    from dotenv import load_dotenv  # type: ignore
+    # Можно переопределить путь переменной RAG_DOTENV_FILE
+    _dotenv_path = os.getenv("RAG_DOTENV_FILE", ".env")
+    if os.path.isfile(_dotenv_path):
+        load_dotenv(_dotenv_path)
+except Exception:
+    pass
 from app.utils.ingestion import scan_directory, list_index, ingest_files
 from app.utils.auth import require_jwt, issue_token
 

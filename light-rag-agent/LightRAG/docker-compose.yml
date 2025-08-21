@@ -12,25 +12,25 @@ services:
     environment:
       # OpenAI Configuration
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-  - OPENAI_MODEL=${OPENAI_MODEL:-gpt-5-mini}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-5-mini}
       - OPENAI_TEMPERATURE=${OPENAI_TEMPERATURE:-0.0}
-      
+
       # RAG Configuration
       - RAG_WORKING_DIR=${RAG_WORKING_DIR:-/app/documents}
-  - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL:-gpt-5-mini}
-  - RAG_LLM_MODEL=${RAG_LLM_MODEL:-gpt-5-mini}
+      - RAG_EMBEDDING_MODEL=${RAG_EMBEDDING_MODEL:-gpt-5-mini}
+      - RAG_LLM_MODEL=${RAG_LLM_MODEL:-gpt-5-mini}
       - RAG_RERANK_ENABLED=${RAG_RERANK_ENABLED:-true}
       - RAG_BATCH_SIZE=${RAG_BATCH_SIZE:-20}
       - RAG_MAX_DOCS_FOR_RERANK=${RAG_MAX_DOCS_FOR_RERANK:-20}
       - RAG_CHUNK_SIZE=${RAG_CHUNK_SIZE:-1000}
       - RAG_CHUNK_OVERLAP=${RAG_CHUNK_OVERLAP:-200}
-      
+
       # App Configuration
       - APP_DEBUG=${APP_DEBUG:-false}
       - APP_LOG_LEVEL=${APP_LOG_LEVEL:-INFO}
       - APP_MAX_CONVERSATION_HISTORY=${APP_MAX_CONVERSATION_HISTORY:-100}
       - APP_ENABLE_STREAMING=${APP_ENABLE_STREAMING:-true}
-      
+
       # API Configuration
       - API_HOST=0.0.0.0
       - API_PORT=8000
@@ -38,15 +38,20 @@ services:
       - API_ENABLE_DOCS=${API_ENABLE_DOCS:-true}
       - API_RATE_LIMIT=${API_RATE_LIMIT:-100}
       - API_MAX_REQUEST_SIZE=${API_MAX_REQUEST_SIZE:-10MB}
-      
+
       # AWS Specific
       - AWS_REGION=${AWS_REGION:-us-east-1}
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      
-      # Security
+
+      # Security & JWT
       - API_SECRET_KEY=${API_SECRET_KEY}
       - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-*}
+      - RAG_JWT_SECRET=${RAG_JWT_SECRET}
+      - RAG_JWT_EXPIRE_SECONDS=${RAG_JWT_EXPIRE_SECONDS:-3600}
+      - RAG_ALLOWED_USERS=${RAG_ALLOWED_USERS}
+      - RAG_ALLOWED_ROLES=${RAG_ALLOWED_ROLES}
+      - RAG_REQUIRE_JWT=${RAG_REQUIRE_JWT:-1}
       
     volumes:
       - ./documents:/app/documents

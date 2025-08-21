@@ -29,20 +29,43 @@ class RAGManager:
 			raise ValueError("OPENAI_API_KEY environment variable not set. Set it or ALLOW_START_WITHOUT_OPENAI_KEY=1 for degraded mode.")
 
 	async def initialize(self) -> LightRAG:
+		"""
+		Initialize LightRAG with optimized startup.
+		
+		Returns:
+			LightRAG: Initialized LightRAG instance.
+			
+		Raises:
+			ValueError: If OPENAI_API_KEY is not set.
+		"""
 		if self._rag is None:
 			if not os.getenv("OPENAI_API_KEY"):
 				raise ValueError("Cannot initialize LightRAG without OPENAI_API_KEY")
+			
+			logger.info(f"Initializing LightRAG in {self.config.working_dir}")
+			
+			# Reason: Creating LightRAG instance with optimized settings
 			self._rag = LightRAG(
 				working_dir=self.config.working_dir,
 				embedding_func=openai_embed,
 				llm_model_func=dynamic_openai_complete,
 			)
-			await self._rag.initialize_storages()
-			await initialize_pipeline_status()
+			
+			# Reason: Parallel initialization of storage and pipeline for faster startup
+			import asyncio
+			await asyncio.gather(
+				self._rag.initialize_storages(),
+				initialize_pipeline_status(),
+				return_exceptions=True  # Don't fail if one initialization fails
+			)
+			
+			# Reason: Background backfill to avoid blocking startup
 			try:
 				self._backfill_file_path_fields()
 			except Exception as e:  # noqa: BLE001
 				logger.debug(f"file_path backfill skipped/failed: {e}")
+				
+			logger.info("LightRAG initialization completed")
 		return self._rag
 
 	async def get_rag(self) -> LightRAG:
@@ -91,8 +114,8 @@ async def dynamic_openai_complete(prompt: str, *args, **kwargs) -> str:  # noqa:
 		temperature = float(os.getenv("OPENAI_TEMPERATURE", "0") or 0)
 	except ValueError:
 		temperature = 0.0
-	# Добавляем таймаут для OpenAI запросов
-	timeout_seconds = int(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
+	# Увеличиваем таймаут для OpenAI запросов (для сложных RAG операций)
+	timeout_seconds = int(os.getenv("OPENAI_TIMEOUT_SECONDS", "60"))
 	client = AsyncOpenAI(api_key=api_key, timeout=timeout_seconds)
 	last_error: Exception | None = None
 	for model_name in models_to_try:

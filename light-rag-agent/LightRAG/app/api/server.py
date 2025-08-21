@@ -30,6 +30,7 @@ except Exception:
     pass
 from app.utils.ingestion import scan_directory, list_index, ingest_files
 from app.utils.auth import require_jwt, issue_token
+from app.utils.s3_storage import get_s3_storage, S3StorageAdapter
 
 try:  # гибкий импорт логгера
     from app.logger import setup_logger  # type: ignore
@@ -334,6 +335,7 @@ system_prompt: Optional[str] = None
 _model_self_test: Dict[str, Any] | None = None
 _create_agent = None  # type: ignore
 _RAGDeps = None  # type: ignore
+s3_storage: Optional[S3StorageAdapter] = None
 
 # ---- In-memory conversation storage (этап 1) ----
 # conversations[conversation_id] = list[ {"role": "user"|"assistant", "content": str} ]
@@ -580,7 +582,7 @@ async def get_rag_manager() -> RAGManager:
 
 @app.on_event("startup")
 async def startup_event():  # noqa: D401
-    global rag_manager, system_prompt, _model_self_test, _create_agent, _RAGDeps
+    global rag_manager, system_prompt, _model_self_test, _create_agent, _RAGDeps, s3_storage
     try:
         logger.info("Initializing RAG system...")
         if not os.getenv("OPENAI_API_KEY"):
@@ -624,6 +626,18 @@ async def startup_event():  # noqa: D401
             except Exception as e:  # noqa: BLE001
                 logger.warning(f"Model self-test error: {e}")
                 _model_self_test = {"ok": False, "error": str(e), "tried": []}
+        
+        # Initialize S3 storage if configured
+        try:
+            s3_storage = get_s3_storage()
+            if s3_storage:
+                logger.info(f"S3 storage initialized: bucket={s3_storage.bucket_name}")
+            else:
+                logger.info("S3 storage not configured - using local file storage")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"S3 storage initialization failed: {e}")
+            s3_storage = None
+        
         # Auto-ingest on startup if configured
         try:
             auto_dir = os.getenv("RAG_INGEST_DIR")
@@ -784,8 +798,8 @@ async def chat_endpoint(
         deps = _RAGDeps(rag_manager=rag_mgr)
         try:
             if phase: phase.start("agent_run")
-            # Добавляем таймаут для agent.run() чтобы избежать 504
-            agent_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "45"))
+            # Увеличиваем таймаут для продакшена - сложные RAG запросы могут занимать до 2 минут
+            agent_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "120"))
             result = await asyncio.wait_for(
                 agent.run(request.message, deps=deps),
                 timeout=agent_timeout
@@ -956,23 +970,91 @@ _ingest_lock = asyncio.Lock()
 @app.post(
     "/documents/upload",
     summary="Загрузка файла",
-    description="Загружает файл (multipart/form-data) в raw_uploads и опционально сразу выполняет ingest (парсинг + индексирование). Требует JWT Bearer.",
+    description="Загружает файл в S3 (если настроено) или локально, и опционально выполняет ingest. Требует JWT Bearer.",
     response_model=Dict[str, Any]
 )
 async def upload_document(file: UploadFile = File(...), ingest: bool = True, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
+    """
+    Upload document to S3 or local storage and optionally ingest into RAG.
+    
+    Args:
+        file: Uploaded file object.
+        ingest: Whether to immediately ingest file into RAG index.
+        rag_mgr: RAG manager dependency.
+        _claims: JWT claims dependency.
+        
+    Returns:
+        Dict with upload status, storage location, and ingestion results.
+    """
     rag = await rag_mgr.get_rag()
     content_bytes = await file.read()
     if not content_bytes:
         raise HTTPException(status_code=400, detail="Empty file")
-    raw_dir = Path(rag_mgr.config.working_dir) / "raw_uploads"
-    raw_dir.mkdir(parents=True, exist_ok=True)
-    dest = raw_dir / file.filename
-    dest.write_bytes(content_bytes)
-    result = None
-    if ingest:
-        async with _ingest_lock:
-            result = await ingest_files(rag, [dest], rag_mgr.config.working_dir)
-    return {"status": "ok", "stored_as": str(dest), "ingestion": result}
+    
+    storage_info = {}
+    local_path = None
+    
+    try:
+        # Try S3 upload first if configured
+        if s3_storage:
+            import io
+            file_obj = io.BytesIO(content_bytes)
+            s3_key = await s3_storage.upload_file_obj(
+                file_obj, 
+                file.filename or "unknown_file",
+                metadata={
+                    'content_type': file.content_type or 'application/octet-stream',
+                    'original_filename': file.filename or 'unknown'
+                }
+            )
+            storage_info = {
+                "storage_type": "s3",
+                "s3_bucket": s3_storage.bucket_name,
+                "s3_key": s3_key,
+                "s3_url": f"s3://{s3_storage.bucket_name}/{s3_key}"
+            }
+            
+            # Download to temp location for ingestion if needed
+            if ingest:
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=f"_{file.filename}", delete=False) as tmp:
+                    tmp.write(content_bytes)
+                    local_path = tmp.name
+        else:
+            # Fallback to local storage
+            raw_dir = Path(rag_mgr.config.working_dir) / "raw_uploads"
+            raw_dir.mkdir(parents=True, exist_ok=True)
+            local_path = raw_dir / (file.filename or "unknown_file")
+            local_path.write_bytes(content_bytes)
+            storage_info = {
+                "storage_type": "local",
+                "local_path": str(local_path)
+            }
+        
+        # Perform ingestion if requested
+        ingestion_result = None
+        if ingest and local_path:
+            async with _ingest_lock:
+                ingestion_result = await ingest_files(rag, [Path(local_path)], rag_mgr.config.working_dir)
+            
+            # Clean up temp file if used for S3
+            if s3_storage and local_path.startswith('/tmp'):
+                try:
+                    os.unlink(local_path)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(f"Failed to cleanup temp file {local_path}: {e}")
+        
+        return {
+            "status": "ok",
+            "file_size": len(content_bytes),
+            "filename": file.filename,
+            **storage_info,
+            "ingestion": ingestion_result
+        }
+        
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Document upload failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
 
 
 @app.post(
@@ -1027,6 +1109,92 @@ async def ingest_list(rag_mgr: RAGManager = Depends(get_rag_manager), _claims=De
 
 
 from app.utils.ingestion import delete_from_index, clear_index
+
+
+@app.get(
+    "/documents/s3/list",
+    summary="Список S3 документов",
+    description="Возвращает список документов в S3 бакете. Требует JWT Bearer.",
+    response_model=Dict[str, Any]
+)
+async def list_s3_documents(prefix: str = "", max_items: int = 100, _claims=Depends(require_jwt)):
+    """List documents stored in S3 bucket."""
+    if not s3_storage:
+        raise HTTPException(status_code=503, detail="S3 storage not configured")
+    
+    try:
+        objects = await s3_storage.list_objects(prefix_filter=prefix, max_keys=max_items)
+        return {
+            "status": "ok",
+            "bucket": s3_storage.bucket_name,
+            "prefix": prefix,
+            "count": len(objects),
+            "objects": objects
+        }
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Failed to list S3 objects: {e}")
+        raise HTTPException(status_code=500, detail=f"S3 list failed: {str(e)}")
+
+
+@app.get(
+    "/documents/s3/download/{s3_key:path}",
+    summary="Скачать S3 документ",
+    description="Генерирует presigned URL для скачивания документа из S3. Требует JWT Bearer."
+)
+async def download_s3_document(s3_key: str, expiration: int = 3600, _claims=Depends(require_jwt)):
+    """Generate presigned URL for downloading S3 document."""
+    if not s3_storage:
+        raise HTTPException(status_code=503, detail="S3 storage not configured")
+    
+    try:
+        # Check if object exists
+        if not await s3_storage.object_exists(s3_key):
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Generate presigned URL
+        download_url = s3_storage.get_presigned_url(s3_key, expiration=expiration)
+        
+        return {
+            "status": "ok",
+            "s3_key": s3_key,
+            "download_url": download_url,
+            "expires_in_seconds": expiration
+        }
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Failed to generate download URL for {s3_key}: {e}")
+        raise HTTPException(status_code=500, detail=f"Download URL generation failed: {str(e)}")
+
+
+@app.delete(
+    "/documents/s3/{s3_key:path}",
+    summary="Удалить S3 документ",
+    description="Удаляет документ из S3 бакета. Требует JWT Bearer."
+)
+async def delete_s3_document(s3_key: str, _claims=Depends(require_jwt)):
+    """Delete document from S3 bucket."""
+    if not s3_storage:
+        raise HTTPException(status_code=503, detail="S3 storage not configured")
+    
+    try:
+        # Check if object exists
+        if not await s3_storage.object_exists(s3_key):
+            raise HTTPException(status_code=404, detail="Document not found")
+        
+        # Delete object
+        success = await s3_storage.delete_object(s3_key)
+        
+        return {
+            "status": "ok" if success else "error",
+            "s3_key": s3_key,
+            "deleted": success
+        }
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        logger.error(f"Failed to delete S3 object {s3_key}: {e}")
+        raise HTTPException(status_code=500, detail=f"S3 deletion failed: {str(e)}")
 
 
 @app.post(
@@ -1187,9 +1355,9 @@ async def chat_stream_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depen
         rid = _cv_request_id.get() or "unknown"
         yield f"data: {{\"status\":\"started\",\"request_id\":\"{rid}\"}}\n\n"
         try:
-            # Запуск основного выполнения с таймаутом
+            # Запуск основного выполнения с таймаутом (стриминг версия)
             if phase: phase.start("agent_run")
-            agent_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "45"))
+            agent_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "120"))
             result = await asyncio.wait_for(
                 agent.run(request.message, deps=deps),
                 timeout=agent_timeout

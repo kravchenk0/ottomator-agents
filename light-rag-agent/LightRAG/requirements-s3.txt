@@ -1,0 +1,5 @@
+# S3 Integration Requirements
+# Add these to your main requirements.txt
+
+boto3==1.35.73                    # AWS SDK for S3 storage integration
+botocore==1.35.73                 # Core AWS SDK library

@@ -110,13 +110,21 @@ def _register_tools(agent: Agent) -> Agent:
 				logger.debug("[retrieve] cache hit")
 				return cached_result
 			
-			# Выполняем запрос с таймаутом
+			# Адаптивный таймаут: короткие запросы = быстрый поиск, длинные = глубокий поиск
 			rag = await context.deps.rag_manager.get_rag()
-			retrieve_timeout = int(os.getenv("RAG_RETRIEVE_TIMEOUT_SECONDS", "15"))
+			query_length = len(search_query.split())
+			if query_length <= 5:  # Простые запросы (1-5 слов)
+				retrieve_timeout = int(os.getenv("RAG_RETRIEVE_TIMEOUT_FAST", "20"))
+				search_mode = "local"  # Быстрый локальный поиск
+			else:  # Сложные запросы
+				retrieve_timeout = int(os.getenv("RAG_RETRIEVE_TIMEOUT_SECONDS", "60"))
+				search_mode = "mix"  # Полный гибридный поиск
+			
+			logger.debug(f"[retrieve] query_length={query_length}, timeout={retrieve_timeout}s, mode={search_mode}")
 			
 			try:
 				result = await asyncio.wait_for(
-					rag.aquery(search_query, param=QueryParam(mode="mix")),
+					rag.aquery(search_query, param=QueryParam(mode=search_mode)),
 					timeout=retrieve_timeout
 				)
 			except asyncio.TimeoutError:

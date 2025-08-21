@@ -5,6 +5,10 @@ terraform {
       source  = "hashicorp/aws"
       version = "~> 5.0"
     }
+    random = {
+      source  = "hashicorp/random"
+      version = "~> 3.1"
+    }
   }
 }
 
@@ -133,6 +137,147 @@ resource "aws_security_group" "lightrag_sg" {
   }
 }
 
+# S3 Bucket for Document Storage
+resource "aws_s3_bucket" "lightrag_documents" {
+  bucket = "${var.project_name}-documents-${var.environment}-${random_id.bucket_suffix.hex}"
+
+  tags = merge(var.tags, {
+    Name        = "${var.project_name}-documents"
+    Purpose     = "Document storage for LightRAG ingestion"
+    Environment = var.environment
+  })
+}
+
+resource "random_id" "bucket_suffix" {
+  byte_length = 4
+}
+
+resource "aws_s3_bucket_versioning" "lightrag_documents" {
+  count  = var.enable_s3_versioning ? 1 : 0
+  bucket = aws_s3_bucket.lightrag_documents.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "lightrag_documents" {
+  bucket = aws_s3_bucket.lightrag_documents.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "lightrag_documents" {
+  bucket = aws_s3_bucket.lightrag_documents.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "lightrag_documents" {
+  bucket = aws_s3_bucket.lightrag_documents.id
+
+  rule {
+    id     = "document_lifecycle"
+    status = "Enabled"
+
+    # Apply to all objects with the document prefix
+    filter {
+      prefix = var.s3_document_prefix
+    }
+
+    # Move to Infrequent Access after configured days
+    transition {
+      days          = var.s3_lifecycle_ia_days
+      storage_class = "STANDARD_IA"
+    }
+
+    # Move to Glacier after configured days  
+    transition {
+      days          = var.s3_lifecycle_glacier_days
+      storage_class = "GLACIER"
+    }
+
+    # Delete after retention period (if configured)
+    dynamic "expiration" {
+      for_each = var.s3_document_retention_days > 0 ? [1] : []
+      content {
+        days = var.s3_document_retention_days
+      }
+    }
+  }
+}
+
+# IAM Role for EC2 to access S3
+resource "aws_iam_role" "lightrag_ec2_role" {
+  name = "${var.project_name}-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_policy" "lightrag_s3_policy" {
+  name        = "${var.project_name}-s3-policy"
+  description = "Policy for LightRAG to access S3 documents bucket"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject", 
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation"
+        ]
+        Resource = [
+          aws_s3_bucket.lightrag_documents.arn,
+          "${aws_s3_bucket.lightrag_documents.arn}/*"
+        ]
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+resource "aws_iam_role_policy_attachment" "lightrag_s3_policy" {
+  role       = aws_iam_role.lightrag_ec2_role.name
+  policy_arn = aws_iam_policy.lightrag_s3_policy.arn
+}
+
+# Attach SSM policy for systems manager access
+resource "aws_iam_role_policy_attachment" "lightrag_ssm_policy" {
+  role       = aws_iam_role.lightrag_ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_instance_profile" "lightrag_profile" {
+  name = "${var.project_name}-profile"
+  role = aws_iam_role.lightrag_ec2_role.name
+
+  tags = var.tags
+}
+
 # Key Pair
 resource "aws_key_pair" "lightrag_key" {
   key_name   = "${var.project_name}-key"
@@ -142,10 +287,11 @@ resource "aws_key_pair" "lightrag_key" {
 # EC2 Instance
 resource "aws_instance" "lightrag_instance" {
   ami = var.ami_id != "" ? var.ami_id : (var.use_amazon_linux_2023 ? data.aws_ssm_parameter.al2023.value : data.aws_ssm_parameter.amzn2.value)
-  instance_type          = var.instance_type
-  key_name               = aws_key_pair.lightrag_key.key_name
-  subnet_id              = aws_subnet.lightrag_subnet.id
-  vpc_security_group_ids = [aws_security_group.lightrag_sg.id]
+  instance_type               = var.instance_type
+  key_name                    = aws_key_pair.lightrag_key.key_name
+  subnet_id                   = aws_subnet.lightrag_subnet.id
+  vpc_security_group_ids      = [aws_security_group.lightrag_sg.id]
+  iam_instance_profile        = aws_iam_instance_profile.lightrag_profile.name
   user_data_replace_on_change = true
 
   root_block_device {
@@ -183,6 +329,9 @@ resource "aws_instance" "lightrag_instance" {
   RAG_JWT_SECRET              = var.rag_jwt_secret
   RAG_API_KEYS                = var.rag_api_keys
   ALLOWED_INGRESS_CIDRS       = join(" ", var.allowed_ingress_cidrs)
+  AWS_S3_BUCKET               = aws_s3_bucket.lightrag_documents.bucket
+  AWS_REGION                  = var.aws_region
+  S3_DOCUMENT_PREFIX          = var.s3_document_prefix
   })
 
   tags = {
@@ -226,6 +375,21 @@ output "api_endpoint" {
 output "health_check_url" {
   description = "Health check URL"
   value       = "http://${aws_eip.lightrag_eip.public_ip}:8000/health"
+}
+
+output "s3_bucket_name" {
+  description = "S3 bucket name for documents"
+  value       = aws_s3_bucket.lightrag_documents.bucket
+}
+
+output "s3_bucket_arn" {
+  description = "S3 bucket ARN for documents"
+  value       = aws_s3_bucket.lightrag_documents.arn
+}
+
+output "iam_role_arn" {
+  description = "IAM role ARN for EC2 instance"
+  value       = aws_iam_role.lightrag_ec2_role.arn
 } 
 
 # -----------------------------

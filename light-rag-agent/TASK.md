@@ -61,9 +61,11 @@
 
 ### Environment Variables Added
 ```bash
-OPENAI_TIMEOUT_SECONDS=30
-RAG_AGENT_TIMEOUT_SECONDS=45
-RAG_RETRIEVE_TIMEOUT_SECONDS=15
+# Updated for production optimization
+OPENAI_TIMEOUT_SECONDS=60
+RAG_AGENT_TIMEOUT_SECONDS=120
+RAG_RETRIEVE_TIMEOUT_SECONDS=60
+RAG_RETRIEVE_TIMEOUT_FAST=20
 RAG_CACHE_TTL_SECONDS=300
 RAG_HISTORY_ASYNC_THRESHOLD=20
 ```
@@ -76,9 +78,23 @@ RAG_HISTORY_ASYNC_THRESHOLD=20
 - [x] **Implement agent caching optimization**
 - [x] **Add RAG result caching**
 - [x] **Optimize conversation cleanup**
-- [x] **Fix 504 timeout issues**
+- [x] **Fix 504 timeout issues (Round 1)**
 - [x] **Add comprehensive timeout management**
 - [x] **Create project documentation structure**
+- [x] **Fix persistent 504 timeouts (Round 2)**
+  - Increased agent timeout from 45s to 120s
+  - Added adaptive RAG search (fast mode for simple queries)
+  - Optimized LightRAG initialization with parallel loading
+  - Increased OpenAI timeout from 30s to 60s
+  - Created .env.production.optimized with optimal settings
+- [x] **Implement S3 document storage integration**
+  - Added complete S3 bucket infrastructure in Terraform
+  - Created S3StorageAdapter with async operations
+  - Updated document upload endpoints for S3/local hybrid storage
+  - Added S3-specific endpoints (list, download, delete)
+  - Configured IAM roles and security policies
+  - Added lifecycle management and cost optimization
+  - Created comprehensive S3_INTEGRATION.md documentation
 
 ## 📅 Scheduled for Later
 - Database integration for persistent conversation storage

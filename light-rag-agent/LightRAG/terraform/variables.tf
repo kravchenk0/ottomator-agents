@@ -213,3 +213,35 @@ variable "debug_open_app_port" {
   type        = bool
   default     = false
 }
+
+# === S3 Document Storage Variables ===
+
+variable "s3_document_prefix" {
+  description = "S3 key prefix for organizing documents (e.g., 'documents/', 'uploads/')"
+  type        = string
+  default     = "documents/"
+}
+
+variable "s3_document_retention_days" {
+  description = "Number of days to retain documents in S3 (0 = no expiration)"
+  type        = number
+  default     = 0
+}
+
+variable "enable_s3_versioning" {
+  description = "Enable S3 bucket versioning for documents"
+  type        = bool
+  default     = true
+}
+
+variable "s3_lifecycle_ia_days" {
+  description = "Number of days before moving documents to Infrequent Access"
+  type        = number
+  default     = 30
+}
+
+variable "s3_lifecycle_glacier_days" {
+  description = "Number of days before moving documents to Glacier"
+  type        = number
+  default     = 90
+}

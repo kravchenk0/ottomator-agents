@@ -369,7 +369,7 @@ resource "aws_lb_target_group" "lightrag_tg" {
   protocol = "HTTP"
   vpc_id   = aws_vpc.lightrag_vpc.id
   health_check {
-    path                = "/health"
+  path                = "/alb-health"
     matcher             = "200"
     interval            = 30
     healthy_threshold   = 2

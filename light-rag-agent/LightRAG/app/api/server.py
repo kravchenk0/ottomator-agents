@@ -421,6 +421,15 @@ async def health_check(_claims=Depends(require_jwt)):
     )
 
 
+@app.get(
+    "/alb-health",
+    summary="Простой health для ALB (без авторизации)",
+    description="Минимальный открытый health эндпоинт для Target Group ALB. Возвращает только status и версию."
+)
+async def alb_health():
+    return {"status": "ok", "version": "1.0.0"}
+
+
 @app.post(
     "/chat",
     response_model=ChatResponse,

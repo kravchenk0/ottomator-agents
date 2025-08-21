@@ -310,9 +310,12 @@ conversations: Dict[str, List[Dict[str, str]]] = {}
 conversation_meta: Dict[str, Dict[str, float]] = {}  # {id: {created, last_activity}}
 MAX_HISTORY_MESSAGES = int(os.getenv("RAG_MAX_HISTORY_MESSAGES", "12"))  # обрезаем глубину
 CONVERSATION_TTL_SECONDS = int(os.getenv("RAG_CONVERSATION_TTL_SECONDS", "3600"))  # 1 час по умолчанию
+ASYNC_HISTORY_THRESHOLD = int(os.getenv("RAG_HISTORY_ASYNC_THRESHOLD", "80"))  # порог длины (сообщений) для offload
 USER_RATE_LIMIT = int(os.getenv("RAG_USER_RATE_LIMIT", "10"))  # 10 запросов / окно
 USER_RATE_WINDOW_SECONDS = int(os.getenv("RAG_USER_RATE_WINDOW_SECONDS", "3600"))
 user_rate: Dict[str, Dict[str, float]] = {}  # {user_id: {count, window_start}}
+_cleanup_task = None  # background task handler
+CONVERSATION_CLEANUP_INTERVAL = int(os.getenv("RAG_CONVERSATION_CLEANUP_INTERVAL", "60"))
 
 def _enforce_user_rate_limit(user_id: str):
     now = time.time()
@@ -359,18 +362,7 @@ def cleanup_expired_conversations() -> int:
         conversation_meta.pop(cid, None)
     return len(expired)
 
-def build_history_context(messages: List[Dict[str, str]], include_last_user: bool = False) -> str:
-    """Собирает текстовую историю для встраивания в system_prompt.
-
-    Берём последние MAX_HISTORY_MESSAGES сообщений. По умолчанию исключаем
-    последнее пользовательское сообщение (оно приходит отдельным prompt'ом в agent.run).
-    Форматируем строки вида "User: ..." / "Assistant: ...".
-    """
-    if not messages:
-        return ""
-    relevant = messages[-MAX_HISTORY_MESSAGES:]
-    if not include_last_user and relevant and relevant[-1].get("role") == "user":
-        relevant = relevant[:-1]
+def _format_history(relevant: List[Dict[str, str]]) -> str:
     lines: List[str] = []
     for m in relevant:
         role = m.get("role", "user")
@@ -380,6 +372,22 @@ def build_history_context(messages: List[Dict[str, str]], include_last_user: boo
         prefix = "User" if role == "user" else "Assistant"
         lines.append(f"{prefix}: {content}")
     return "\n".join(lines)
+
+
+async def build_history_context_async(messages: List[Dict[str, str]], include_last_user: bool = False) -> str:
+    """Асинхронно собирает историю. Для больших списков (>{ASYNC_HISTORY_THRESHOLD}) выполняет форматирование в thread executor.
+
+    Оптимизация: избегаем блокирования event loop при длинных историях.
+    """
+    if not messages:
+        return ""
+    relevant = messages[-MAX_HISTORY_MESSAGES:]
+    if not include_last_user and relevant and relevant[-1].get("role") == "user":
+        relevant = relevant[:-1]
+    if len(relevant) <= ASYNC_HISTORY_THRESHOLD:
+        return _format_history(relevant)
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _format_history, relevant)
 
 # Простой performance logger fallback (используется чатом)
 class _PerfLogger:
@@ -595,6 +603,22 @@ async def startup_event():  # noqa: D401
         if os.getenv("FAST_FAILLESS_INIT", "0").lower() not in {"1", "true", "yes"}:
             raise
 
+    # Запуск фоновой очистки разговоров
+    async def conversation_cleanup_loop():  # noqa: D401
+        while True:
+            try:
+                await asyncio.sleep(CONVERSATION_CLEANUP_INTERVAL)
+                removed = cleanup_expired_conversations()
+                if removed > 0:
+                    logger.info(f"conversation_cleanup removed={removed} total_active={len(conversations)}")
+            except asyncio.CancelledError:  # graceful shutdown
+                break
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"conversation_cleanup_loop error: {e}")
+    global _cleanup_task
+    if _cleanup_task is None or _cleanup_task.done():  # type: ignore
+        _cleanup_task = asyncio.create_task(conversation_cleanup_loop())
+
 
 @app.get(
     "/",
@@ -677,8 +701,7 @@ async def chat_endpoint(
         raise HTTPException(status_code=400, detail="'message' is required and cannot be empty")
 
     # --- Conversation memory (этап 2) ---
-    # Очистка просроченных диалогов (ленивая)
-    cleanup_expired_conversations()
+    # Фоновая очистка диалогов выполняется в отдельной задаче
     # User id для лимитов
     user_id = request.user_id or (_claims.get("sub") if isinstance(_claims, dict) else None) or "anonymous"
     # Rate limit enforcement
@@ -692,7 +715,7 @@ async def chat_endpoint(
         del msgs[: len(msgs) - MAX_HISTORY_MESSAGES * 2]
     # Формируем history_context (исключая только что добавленное user сообщение)
     if _phase: _phase.start("history")
-    history_context = build_history_context(msgs, include_last_user=False)
+    history_context = await build_history_context_async(msgs, include_last_user=False)
     if _phase: _phase.end("history")
     if history_context:
         effective_prompt = f"{system_prompt}\n\nConversation so far:\n{history_context}\n---"
@@ -997,7 +1020,6 @@ def get_app() -> FastAPI:  # helper for ASGI servers
     summary="Список conversation_id",
     description="Возвращает список активных conversation_id в памяти. Требует JWT Bearer.")
 async def list_conversations(_claims=Depends(require_jwt)):
-    cleanup_expired_conversations()
     return {"conversations": list(conversations.keys())}
 
 
@@ -1068,14 +1090,14 @@ async def chat_stream_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depen
     if not request.message or not request.message.strip():
         performance_logger.end_timer("chat_request_stream")
         raise HTTPException(status_code=400, detail="'message' is required and cannot be empty")
-    cleanup_expired_conversations()
+    # Фоновая очистка диалогов выполняется в отдельной задаче
     user_id = request.user_id or (_claims.get("sub") if isinstance(_claims, dict) else None) or "anonymous"
     _enforce_user_rate_limit(user_id)
     msgs = conversations.setdefault(conv_id, [])
     meta = conversation_meta.setdefault(conv_id, {"created": time.time(), "last_activity": time.time()})
     msgs.append({"role": "user", "content": request.message})
     if _phase: _phase.start("history")
-    history_context = build_history_context(msgs, include_last_user=False)
+    history_context = await build_history_context_async(msgs, include_last_user=False)
     if _phase: _phase.end("history")
     if history_context:
         effective_prompt = f"{system_prompt}\n\nConversation so far:\n{history_context}\n---"

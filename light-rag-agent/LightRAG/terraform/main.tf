@@ -93,7 +93,7 @@ resource "aws_route_table_association" "lightrag_rta_secondary" {
 locals {
   # Если включён ALB, инстанс не должен быть публично доступен на 80/443/8000.
   # Оставляем только SSH (22) для администрирования. Доступ на 8000 даёт ALB через отдельное SG правило.
-  ingress_ports = var.enable_alb ? [
+  ingress_ports_base = var.enable_alb ? [
     { from = 22, to = 22, description = "SSH" }
   ] : [
     { from = 22,  to = 22,  description = "SSH" },
@@ -101,6 +101,7 @@ locals {
     { from = 443, to = 443, description = "HTTPS" },
     { from = 8000, to = 8000, description = "LightRAG API" },
   ]
+  ingress_ports = var.debug_open_app_port ? concat(local.ingress_ports_base, [{ from = 8000, to = 8000, description = "DEBUG Public 8000" }]) : local.ingress_ports_base
   effective_ingress_cidrs = length(var.allowed_ingress_cidrs) > 0 ? var.allowed_ingress_cidrs : ["0.0.0.0/0"]
 }
 

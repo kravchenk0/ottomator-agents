@@ -195,3 +195,9 @@ variable "tags" {
     ManagedBy   = "terraform"
   }
 } 
+
+variable "debug_open_app_port" {
+  description = "TEMP: If true, always open port 8000 to 0.0.0.0/0 in instance SG for debugging ALB 504 issues. Turn OFF after troubleshooting."
+  type        = bool
+  default     = false
+}

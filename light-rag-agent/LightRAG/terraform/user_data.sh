@@ -10,7 +10,7 @@ if command -v dnf >/dev/null 2>&1; then dnf install -y git curl docker >/dev/nul
 systemctl enable docker || true
 systemctl start docker || true
 
-# 2. Docker compose plugin (avoid ${var} so Terraform doesn't expect key)
+# 2. Docker compose plugin (установка docker compose плагина)
 VER=v2.27.0
 if ! docker compose version >/dev/null 2>&1; then
   echo "[compose] installing plugin $VER"

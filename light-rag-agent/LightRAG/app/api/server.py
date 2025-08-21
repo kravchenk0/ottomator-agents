@@ -6,6 +6,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from fastapi import Header, status, FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi.openapi.utils import get_openapi
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -83,6 +84,39 @@ app = FastAPI(
     ),
     version="1.0.0"
 )
+
+# --- OpenAPI: добавить схему BearerAuth и пометить защищённые эндпоинты ---
+_OPEN_ENDPOINTS = {("GET", "/health"), ("GET", "/alb-health"), ("POST", "/auth/token")}
+
+def custom_openapi():  # type: ignore
+    if app.openapi_schema:
+        return app.openapi_schema
+    schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    # Добавляем security scheme
+    schema.setdefault("components", {}).setdefault("securitySchemes", {})["BearerAuth"] = {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+    }
+    # Применяем ко всем кроме открытых
+    for path, methods in schema.get("paths", {}).items():
+        for method, spec in methods.items():
+            key = (method.upper(), path)
+            if key in _OPEN_ENDPOINTS:
+                # явно указываем пустую security, чтобы Swagger не требовал токен
+                spec["security"] = []
+            else:
+                # добавляем если ещё нет
+                spec.setdefault("security", [{"BearerAuth": []}])
+    app.openapi_schema = schema
+    return schema
+
+app.openapi = custom_openapi  # type: ignore
 
 app.add_middleware(
     CORSMiddleware,

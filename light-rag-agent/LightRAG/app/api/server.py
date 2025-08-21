@@ -5,7 +5,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
-from fastapi import Header, status, FastAPI, HTTPException, Depends, UploadFile, File
+from fastapi import Header, status, FastAPI, HTTPException, Depends, UploadFile, File, Security
 from fastapi.openapi.utils import get_openapi
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -73,6 +73,10 @@ def require_api_key(x_api_key: str | None = Header(default=None)):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or missing API key")
     return True
 
+# Security wrapper для правильного OpenAPI отображения (если понадобится перейти на scopes)
+def require_api_key_sec(x_api_key: str | None = Header(default=None)):
+    return require_api_key(x_api_key)
+
 
 logger = setup_logger("api_server", "INFO")
 
@@ -110,12 +114,13 @@ def custom_openapi():  # type: ignore
         "name": "X-API-Key"
     }
     # Применяем ко всем кроме открытых
+    token_path = app.url_path_for("issue_jwt") if any(r.name == "issue_jwt" for r in app.routes) else "/auth/token"
     for path, methods in schema.get("paths", {}).items():
         for method, spec in methods.items():
             key = (method.upper(), path)
             if key in _OPEN_ENDPOINTS:
                 spec["security"] = []  # полностью открыто
-            elif path == "/auth/token" and method.upper() == "POST":
+            elif path == token_path and method.upper() == "POST":
                 spec["security"] = [{"ApiKeyAuth": []}]
             else:
                 spec.setdefault("security", [{"BearerAuth": []}])
@@ -782,11 +787,12 @@ async def ingest_clear(rag_mgr: RAGManager = Depends(get_rag_manager), _claims=D
 
 @app.post(
     "/auth/token",
+    name="issue_jwt",
     response_model=TokenResponse,
     summary="Выдать JWT токен (требует X-API-Key)",
-    description="Генерация JWT. Теперь требует валидный X-API-Key, настроенный в RAG_API_KEYS/RAG_API_KEY."
+    description="Генерация JWT. Требует валидный X-API-Key (RAG_API_KEYS/RAG_API_KEY)."
 )
-async def issue_jwt(req: TokenRequest, _api=Depends(require_api_key)):
+async def issue_jwt(req: TokenRequest, _api=Security(require_api_key_sec)):
     try:
         token = issue_token(req.user, {}, role=req.role)
         return TokenResponse(access_token=token, role=req.role)

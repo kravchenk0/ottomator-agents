@@ -208,11 +208,18 @@ def instrument_chat(handler: Callable):
             return await handler(*args, **kwargs)
         phase = PhaseTimer()
         req_id = str(uuid.uuid4())
+        # Устанавливаем contextvars, чтобы не ломать сигнатуру handler
+        token_req = _cv_request_id.set(req_id)
+        token_phase = _cv_phase.set(phase)
+        try:
+            logger.debug("instrument_chat v2 active (contextvars)")
+        except Exception:
+            pass
         aggregator.start()
         await _log_chat_event("start", {"request_id": req_id, "ts": time.time(), "mem_kb": _mem_usage_kb()})
         try:
             phase.start("handler")
-            result = await handler(*args, _req_id=req_id, _phase=phase, **kwargs)
+            result = await handler(*args, **kwargs)
             phase.end("handler")
             phases = phase.finish()
             aggregator.end(True, phase.total, phases)
@@ -251,6 +258,13 @@ def instrument_chat(handler: Callable):
                 "mem_kb": _mem_usage_kb(),
             })
             raise
+        finally:
+            # Восстанавливаем contextvars чтобы избежать утечек между запросами (важно при reuse event loop)
+            try:
+                _cv_request_id.reset(token_req)
+                _cv_phase.reset(token_phase)
+            except Exception:
+                pass
     # Сохраняем оригинальную сигнатуру, чтобы FastAPI корректно распознал тело запроса
     try:
         wrapper.__signature__ = inspect.signature(handler)  # type: ignore[attr-defined]
@@ -708,6 +722,8 @@ async def chat_endpoint(
     request: ChatRequest,
     rag_mgr: RAGManager = Depends(get_rag_manager),
     _claims=Depends(require_jwt),
+    _req_id: str | None = None,  # backward compatibility (старый декоратор мог передавать)
+    _phase: Any | None = None,   # будет проигнорирован если используется новый декоратор
 ):
     performance_logger.start_timer("chat_request")
     conv_id = request.conversation_id or request.conversations or f"conv_{hash(request.message) % 10000}"
@@ -729,7 +745,8 @@ async def chat_endpoint(
     if len(msgs) > MAX_HISTORY_MESSAGES * 3:
         del msgs[: len(msgs) - MAX_HISTORY_MESSAGES * 2]
     # Формируем history_context (исключая только что добавленное user сообщение)
-    phase = _cv_phase.get()
+    # Берём phase из contextvar, а если отсутствует (старый decorator) — используем _phase если передан
+    phase = _cv_phase.get() or _phase
     if phase: phase.start("history")
     history_context = await build_history_context_async(msgs, include_last_user=False)
     if phase: phase.end("history")
@@ -1103,7 +1120,7 @@ from fastapi.responses import StreamingResponse  # добавлено для с�
     summary="Стриминговый чат (частичный ответ)",
     description="Возвращает частичный ответ потоком text/event-stream чтобы удерживать соединение живым при долгой генерации. Требует JWT Bearer.")
 @instrument_chat
-async def chat_stream_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt), _req_id: str | None = None, _phase: Any | None = None):
+async def chat_stream_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     performance_logger.start_timer("chat_request_stream")
     conv_id = request.conversation_id or request.conversations or f"conv_{hash(request.message) % 10000}"
     if not request.message or not request.message.strip():
@@ -1115,9 +1132,10 @@ async def chat_stream_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depen
     msgs = conversations.setdefault(conv_id, [])
     meta = conversation_meta.setdefault(conv_id, {"created": time.time(), "last_activity": time.time()})
     msgs.append({"role": "user", "content": request.message})
-    if _phase: _phase.start("history")
+    phase = _cv_phase.get()
+    if phase: phase.start("history")
     history_context = await build_history_context_async(msgs, include_last_user=False)
-    if _phase: _phase.end("history")
+    if phase: phase.end("history")
     if history_context:
         effective_prompt = f"{system_prompt}\n\nConversation so far:\n{history_context}\n---"
     else:
@@ -1129,19 +1147,20 @@ async def chat_stream_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depen
             _create_agent, _RAGDeps = _ca, _rd
         else:
             raise HTTPException(status_code=503, detail="RAG/Agent unavailable: no OPENAI_API_KEY")
-    if _phase: _phase.start("agent_create")
+    if phase: phase.start("agent_create")
     agent = _create_agent(model=request.model, system_prompt=effective_prompt)
-    if _phase: _phase.end("agent_create")
+    if phase: phase.end("agent_create")
     deps = _RAGDeps(rag_manager=rag_mgr)
 
     async def event_generator():
         # Первичный ping, чтобы ALB видел активность
-        yield f"data: {{\"status\":\"started\",\"request_id\":\"{_req_id}\"}}\n\n"
+        rid = _cv_request_id.get() or "unknown"
+        yield f"data: {{\"status\":\"started\",\"request_id\":\"{rid}\"}}\n\n"
         try:
             # Запуск основного выполнения
-            if _phase: _phase.start("agent_run")
+            if phase: phase.start("agent_run")
             result = await agent.run(request.message, deps=deps)
-            if _phase: _phase.end("agent_run")
+            if phase: phase.end("agent_run")
             msgs.append({"role": "assistant", "content": result.data})
             meta["last_activity"] = time.time()
             performance_logger.end_timer("chat_request_stream")

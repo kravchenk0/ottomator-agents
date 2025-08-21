@@ -986,6 +986,21 @@ async def upload_document(file: UploadFile = File(...), ingest: bool = True, rag
     Returns:
         Dict with upload status, storage location, and ingestion results.
     """
+    # Get upload timeout from environment
+    upload_timeout = int(os.getenv("RAG_UPLOAD_TIMEOUT_SECONDS", "300"))
+    
+    try:
+        return await asyncio.wait_for(
+            _upload_document_impl(file, ingest, rag_mgr),
+            timeout=upload_timeout
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"Upload timeout after {upload_timeout} seconds")
+        raise HTTPException(status_code=504, detail=f"Upload timeout after {upload_timeout} seconds")
+
+
+async def _upload_document_impl(file: UploadFile, ingest: bool, rag_mgr: RAGManager):
+    """Internal implementation of document upload with proper error handling."""
     rag = await rag_mgr.get_rag()
     content_bytes = await file.read()
     if not content_bytes:

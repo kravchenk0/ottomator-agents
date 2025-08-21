@@ -146,6 +146,7 @@ resource "aws_instance" "lightrag_instance" {
   key_name               = aws_key_pair.lightrag_key.key_name
   subnet_id              = aws_subnet.lightrag_subnet.id
   vpc_security_group_ids = [aws_security_group.lightrag_sg.id]
+  user_data_replace_on_change = true
 
   root_block_device {
     volume_size = var.volume_size

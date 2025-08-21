@@ -18,6 +18,38 @@ if command -v dnf >/dev/null 2>&1; then dnf install -y git curl docker >/dev/nul
 systemctl enable docker || true
 systemctl start docker || true
 
+# Install docker compose plugin if absent
+install_compose() {
+  local ver="v2.27.0"
+  mkdir -p /usr/local/lib/docker/cli-plugins
+  curl -fsSL -o /usr/local/lib/docker/cli-plugins/docker-compose \
+    https://github.com/docker/compose/releases/download/${ver}/docker-compose-linux-x86_64 || return 1
+  chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
+  echo "[compose] installed ${ver}";
+}
+if ! docker compose version >/dev/null 2>&1; then
+  echo "[compose] plugin missing, installing..."
+  install_compose || echo "[compose][WARN] install failed"
+fi
+
+# Docker socket permissions & group access for ec2-user
+if ! getent group docker >/dev/null 2>&1; then
+  groupadd docker || true
+fi
+usermod -aG docker ec2-user || true
+# Wait for socket and fix perms so current and future sessions of ec2-user have access
+for i in $(seq 1 15); do
+  if [ -S /var/run/docker.sock ]; then
+    chgrp docker /var/run/docker.sock || true
+    chmod 660 /var/run/docker.sock || true
+    # extra ACL (не критично, но гарантирует rw даже если группа сменится)
+    command -v setfacl >/dev/null 2>&1 && setfacl -m u:ec2-user:rw /var/run/docker.sock || true
+    echo "[docker-perms] adjusted at attempt $i"; break
+  fi
+  sleep 1
+done
+id ec2-user || true
+
 cat >/etc/profile.d/lightrag_env.sh <<EOF
 export OPENAI_API_KEY='${OPENAI_API_KEY}'
 export OPENAI_MODEL='${OPENAI_MODEL}'
@@ -112,7 +144,13 @@ EOF
 
 echo "[build] building image"
 docker build -t lightrag-api:latest . || exit 1
-if command -v docker compose >/dev/null 2>&1; then docker compose -f docker-compose.prod.yml up -d; else docker-compose -f docker-compose.prod.yml up -d; fi
+if docker compose version >/dev/null 2>&1; then
+  docker compose -f docker-compose.prod.yml up -d
+elif command -v docker-compose >/dev/null 2>&1; then
+  docker-compose -f docker-compose.prod.yml up -d
+else
+  echo "[ERROR] docker compose not available"; exit 1
+fi
 
 echo "[health] waiting for API"
 for i in $(seq 1 30); do

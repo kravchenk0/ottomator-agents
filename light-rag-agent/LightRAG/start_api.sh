@@ -43,10 +43,10 @@ else
     fi
 fi
 
-# Ensure working docs dir exists (LightRAG default ./pydantic-docs or documents fallback)
-if [ ! -d "pydantic-docs" ] && [ ! -d "documents" ]; then
-    echo "📁 Creating default working directory pydantic-docs"
-    mkdir -p pydantic-docs
+# Ensure working docs dir exists (LightRAG default ./documents)
+if [ ! -d "documents" ] && [ ! -d "pydantic-docs" ]; then
+    echo "📁 Creating default working directory documents"
+    mkdir -p documents
 fi
 
 PORT="${PORT:-8000}"

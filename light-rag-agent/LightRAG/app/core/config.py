@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 @dataclass
 class RAGConfig:
-	working_dir: str = "./pydantic-docs"
+	working_dir: str = "./documents"
 	embedding_model: str = "gpt-5-mini"
 	llm_model: str = "gpt-5-mini"
 	rerank_enabled: bool = True

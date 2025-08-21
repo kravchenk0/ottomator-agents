@@ -33,7 +33,7 @@ LightRAG/
 ├── monkey_patch_lightrag.py  # runtime patch LightRAG.get_vector_context
 ├── docs/          # Документация (вы здесь)
 ├── *.py (shim)    # Временная обратная совместимость → app.*
-└── pydantic-docs/ # Рабочие данные / индексы
+└── documents/ # Рабочие данные / индексы
 ```
 
 ## ♻️ Обратная совместимость

@@ -1,5 +1,8 @@
 """Basic tests for LightRAG implementation."""
 
+import os
+os.environ.setdefault("OPENAI_API_KEY", "test")
+
 import pytest
 import asyncio
 import tempfile
@@ -20,7 +23,7 @@ class TestRAGConfig:
     def test_default_config(self):
         """Test default configuration values."""
         config = RAGConfig()
-        assert config.working_dir == "./pydantic-docs"
+        assert config.working_dir == "./documents"
         assert config.rerank_enabled is True
         assert config.batch_size == 20
     
@@ -80,7 +83,7 @@ class TestRAGManager:
     @pytest.mark.asyncio
     async def test_initialization(self, mock_config, temp_dir):
         """Test RAG manager initialization."""
-        with patch('common.LightRAG') as mock_lightrag:
+        with patch('app.core.rag.LightRAG') as mock_lightrag:
             mock_instance = Mock()
             mock_lightrag.return_value = mock_instance
             mock_instance.initialize_storages = AsyncMock()
@@ -95,7 +98,7 @@ class TestRAGManager:
     @pytest.mark.asyncio
     async def test_get_rag_initialized(self, mock_config):
         """Test getting RAG instance when already initialized."""
-        with patch('common.LightRAG') as mock_lightrag:
+        with patch('app.core.rag.LightRAG') as mock_lightrag:
             mock_instance = Mock()
             mock_lightrag.return_value = mock_instance
             mock_instance.initialize_storages = AsyncMock()
@@ -136,7 +139,7 @@ class TestRAGAgent:
     @pytest.mark.asyncio
     async def test_run_rag_agent_success(self):
         """Test successful RAG agent execution."""
-        with patch('rag_agent.RAGManager') as mock_manager_class:
+        with patch('app.agent.rag_agent.RAGManager') as mock_manager_class:
             mock_manager = Mock()
             mock_manager_class.return_value = mock_manager
             
@@ -144,15 +147,15 @@ class TestRAGAgent:
             mock_agent.run = AsyncMock()
             mock_agent.run.return_value.data = "Test response"
             
-            # Mock the agent import
-            with patch('rag_agent.agent', mock_agent):
+            # Patch create_agent to return our mock agent
+            with patch('app.agent.rag_agent.create_agent', return_value=mock_agent):
                 response = await run_rag_agent("Test question")
                 assert response == "Test response"
     
     @pytest.mark.asyncio
     async def test_run_rag_agent_error(self):
         """Test RAG agent execution with error."""
-        with patch('rag_agent.RAGManager') as mock_manager_class:
+        with patch('app.agent.rag_agent.RAGManager') as mock_manager_class:
             mock_manager_class.side_effect = Exception("Test error")
             
             response = await run_rag_agent("Test question")

@@ -113,7 +113,7 @@ async def insert_documents(
 async def main():
     """Main function to handle document insertion."""
     parser = argparse.ArgumentParser(description="Insert documents into LightRAG")
-    parser.add_argument("--working-dir", default="./pydantic-docs", help="Working directory for LightRAG")
+    parser.add_argument("--working-dir", default="./documents", help="Working directory for LightRAG")
     parser.add_argument("--file", help="Path to a single document file")
     parser.add_argument("--directory", help="Path to directory containing documents")
     parser.add_argument("--url", help="URL to fetch document from")

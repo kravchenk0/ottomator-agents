@@ -3,7 +3,7 @@
 ## Issue: Files Upload to Local Storage Instead of S3
 
 ### Symptoms
-- Upload response shows `"stored_as": "pydantic-docs/raw_uploads/filename"`
+- Upload response shows `"stored_as": "documents/raw_uploads/filename"`
 - S3 bucket remains empty
 - No S3-related information in response
 

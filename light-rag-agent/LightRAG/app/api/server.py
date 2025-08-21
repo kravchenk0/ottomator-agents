@@ -940,6 +940,21 @@ async def get_config(_claims=Depends(require_jwt)):
     response_model=InsertResult
 )
 async def insert_document(content: str, document_id: Optional[str] = None, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
+    # Get upload timeout from environment
+    upload_timeout = int(os.getenv("RAG_UPLOAD_TIMEOUT_SECONDS", "300"))
+    
+    try:
+        return await asyncio.wait_for(
+            _insert_document_impl(content, document_id, rag_mgr),
+            timeout=upload_timeout
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"Document insert timeout after {upload_timeout} seconds")
+        raise HTTPException(status_code=504, detail=f"Document insert timeout after {upload_timeout} seconds")
+
+
+async def _insert_document_impl(content: str, document_id: Optional[str], rag_mgr: RAGManager):
+    """Internal implementation of document insert with proper error handling."""
     try:
         rag = await rag_mgr.get_rag()
         await rag.ainsert(content)
@@ -1079,6 +1094,21 @@ async def _upload_document_impl(file: UploadFile, ingest: bool, rag_mgr: RAGMana
     response_model=IngestionResult
 )
 async def ingest_scan(directory: str | None = None, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
+    # Get upload timeout from environment
+    upload_timeout = int(os.getenv("RAG_UPLOAD_TIMEOUT_SECONDS", "300"))
+    
+    try:
+        return await asyncio.wait_for(
+            _ingest_scan_impl(directory, rag_mgr),
+            timeout=upload_timeout
+        )
+    except asyncio.TimeoutError:
+        logger.error(f"Ingest scan timeout after {upload_timeout} seconds")
+        raise HTTPException(status_code=504, detail=f"Ingest scan timeout after {upload_timeout} seconds")
+
+
+async def _ingest_scan_impl(directory: str | None, rag_mgr: RAGManager):
+    """Internal implementation of ingest scan with proper error handling."""
     rag = await rag_mgr.get_rag()
     # Логика выбора директории:
     # 1) Явно передана параметром

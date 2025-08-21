@@ -98,7 +98,7 @@
       "request": {
         "method": "POST",
         "header": [ { "key": "Content-Type", "value": "application/json" } ],
-        "body": { "mode": "raw", "raw": "{\n  \"working_dir\": \"./pydantic-docs\",\n  \"system_prompt\": \"You are a concise assistant.\"\n}" },
+  "body": { "mode": "raw", "raw": "{\n  \"working_dir\": \"./documents\",\n  \"system_prompt\": \"You are a concise assistant.\"\n}" },
         "url": { "raw": "{{base_url}}/config", "host": ["{{base_url}}"], "path": ["config"] }
       },
       "response": []

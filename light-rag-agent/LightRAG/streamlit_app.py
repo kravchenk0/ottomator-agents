@@ -92,7 +92,7 @@ def create_sidebar() -> RAGConfig:
     
     working_dir = st.sidebar.text_input(
         "Working Directory",
-        value="./pydantic-docs",
+        value="./documents",
         help="Directory where LightRAG stores data"
     )
     

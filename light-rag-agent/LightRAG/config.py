@@ -15,7 +15,7 @@ class OpenAIConfig(BaseModel):
 
 class RAGConfig(BaseModel):
     """RAG system configuration."""
-    working_dir: str = Field(default="./pydantic-docs", description="Working directory for LightRAG")
+    working_dir: str = Field(default="./documents", description="Working directory for LightRAG")
     embedding_model: str = Field(default="gpt-5-mini", description="Embedding model name")
     llm_model: str = Field(default="gpt-5-mini", description="LLM model name")
     rerank_enabled: bool = Field(default=True, description="Enable document reranking")
@@ -76,7 +76,7 @@ class Config:
         # RAG config
         if not hasattr(self, 'rag'):
             self.rag = RAGConfig(
-                working_dir=os.getenv("RAG_WORKING_DIR", "./pydantic-docs"),
+                working_dir=os.getenv("RAG_WORKING_DIR", "./documents"),
                 embedding_model=os.getenv("RAG_EMBEDDING_MODEL", "gpt-5-mini"),
                 llm_model=os.getenv("RAG_LLM_MODEL", "gpt-5-mini"),
                 rerank_enabled=os.getenv("RAG_RERANK_ENABLED", "true").lower() == "true",

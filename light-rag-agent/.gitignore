@@ -1,5 +1,6 @@
 pydantic-docs/
 pydantic-docs-small/
+documents/
 chroma_db/
 data/
 __pycache__/

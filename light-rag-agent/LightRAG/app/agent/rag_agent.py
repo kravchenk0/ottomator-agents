@@ -209,7 +209,7 @@ def _load_prompt_from_file(path: str) -> str:
 def main():
 	parser = argparse.ArgumentParser(description="Run a Pydantic AI agent with RAG using LightRAG")
 	parser.add_argument("--question", required=True, help="The question to answer about Pydantic AI")
-	parser.add_argument("--working-dir", default="./pydantic-docs", help="Working directory for LightRAG")
+	parser.add_argument("--working-dir", default="./documents", help="Working directory for LightRAG")
 	parser.add_argument("--no-rerank", action="store_true", help="Disable reranking")
 	parser.add_argument("--system-prompt", help="Inline system prompt to guide retrieval and answering")
 	parser.add_argument("--system-prompt-file", help="Path to a file containing the system prompt (overrides --system-prompt)")

@@ -6,9 +6,12 @@ import time
 import json
 import uuid
 import resource
+import functools
+import inspect
 from typing import Any, Dict, List, Optional, Callable
 
 from fastapi import Header, status, FastAPI, HTTPException, Depends, UploadFile, File, Security, Request
+from fastapi.responses import PlainTextResponse
 from fastapi.openapi.utils import get_openapi
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -94,6 +97,14 @@ def require_api_key_strict(x_api_key: str | None = Header(default=None)):
 logger = setup_logger("api_server", "INFO")
 
 DETAILED_METRICS_ENABLED = os.getenv("RAG_DETAILED_METRICS", "1").lower() in {"1", "true", "yes"}
+
+# contextvars (могли отсутствовать после мержа)
+try:
+    _cv_request_id  # type: ignore[name-defined]
+except NameError:
+    import contextvars as _cv_mod  # локальный импорт чтобы не дублировать глобальный
+    _cv_request_id = _cv_mod.ContextVar("chat_request_id", default=None)  # type: ignore
+    _cv_phase = _cv_mod.ContextVar("chat_phase", default=None)  # type: ignore
 
 
 class MetricsAggregator:
@@ -191,6 +202,7 @@ async def _log_chat_event(event: str, payload: Dict[str, Any]):
 
 
 def instrument_chat(handler: Callable):
+    @functools.wraps(handler)
     async def wrapper(*args, **kwargs):  # noqa: D401
         if not DETAILED_METRICS_ENABLED:
             return await handler(*args, **kwargs)
@@ -239,6 +251,11 @@ def instrument_chat(handler: Callable):
                 "mem_kb": _mem_usage_kb(),
             })
             raise
+    # Сохраняем оригинальную сигнатуру, чтобы FastAPI корректно распознал тело запроса
+    try:
+        wrapper.__signature__ = inspect.signature(handler)  # type: ignore[attr-defined]
+    except Exception:  # noqa: BLE001
+        pass
     return wrapper
 
 app = FastAPI(
@@ -691,8 +708,6 @@ async def chat_endpoint(
     request: ChatRequest,
     rag_mgr: RAGManager = Depends(get_rag_manager),
     _claims=Depends(require_jwt),
-    _req_id: str | None = None,
-    _phase: Any | None = None,
 ):
     performance_logger.start_timer("chat_request")
     conv_id = request.conversation_id or request.conversations or f"conv_{hash(request.message) % 10000}"
@@ -714,9 +729,10 @@ async def chat_endpoint(
     if len(msgs) > MAX_HISTORY_MESSAGES * 3:
         del msgs[: len(msgs) - MAX_HISTORY_MESSAGES * 2]
     # Формируем history_context (исключая только что добавленное user сообщение)
-    if _phase: _phase.start("history")
+    phase = _cv_phase.get()
+    if phase: phase.start("history")
     history_context = await build_history_context_async(msgs, include_last_user=False)
-    if _phase: _phase.end("history")
+    if phase: phase.end("history")
     if history_context:
         effective_prompt = f"{system_prompt}\n\nConversation so far:\n{history_context}\n---"
     else:
@@ -736,14 +752,14 @@ async def chat_endpoint(
                     error="RAG/Agent unavailable: no OPENAI_API_KEY",
                     metadata={"stage": "init"},
                 )
-        if _phase: _phase.start("agent_create")
+        if phase: phase.start("agent_create")
         agent = _create_agent(model=request.model, system_prompt=current_prompt)
-        if _phase: _phase.end("agent_create")
+        if phase: phase.end("agent_create")
         deps = _RAGDeps(rag_manager=rag_mgr)
         try:
-            if _phase: _phase.start("agent_run")
+            if phase: phase.start("agent_run")
             result = await agent.run(request.message, deps=deps)
-            if _phase: _phase.end("agent_run")
+            if phase: phase.end("agent_run")
             try:
                 sources = getattr(result, 'metadata', {}).get('sources') if getattr(result, 'metadata', None) else None
             except Exception:  # noqa: BLE001
@@ -766,11 +782,11 @@ async def chat_endpoint(
                     "history_context_chars": len(history_context) if history_context else 0,
                     "rate_limit_remaining": _rate_limit_remaining(user_id),
                     "rate_limit_reset_seconds": _rate_limit_reset_in(user_id),
-                    "request_id": _req_id,
+                    "request_id": _cv_request_id.get(),
                 },
             )
             if DETAILED_METRICS_ENABLED:
-                await _log_chat_event("result", {"request_id": _req_id, "conversation_id": conv_id, "history_messages": len(msgs)})
+                await _log_chat_event("result", {"request_id": _cv_request_id.get(), "conversation_id": conv_id, "history_messages": len(msgs)})
             return resp
         except Exception as run_err:  # noqa: BLE001
             performance_logger.end_timer("chat_request")
@@ -794,11 +810,11 @@ async def chat_endpoint(
                     "history_context_chars": len(history_context) if history_context else 0,
                     "rate_limit_remaining": _rate_limit_remaining(user_id),
                     "rate_limit_reset_seconds": _rate_limit_reset_in(user_id),
-                    "request_id": _req_id,
+                    "request_id": _cv_request_id.get(),
                 },
             )
             if DETAILED_METRICS_ENABLED:
-                await _log_chat_event("error", {"request_id": _req_id, "error": code, "detail": err_str})
+                await _log_chat_event("error", {"request_id": _cv_request_id.get(), "error": code, "detail": err_str})
             return resp
     except Exception as outer:  # noqa: BLE001
         performance_logger.end_timer("chat_request")
@@ -806,10 +822,10 @@ async def chat_endpoint(
             response="",
             conversation_id=conv_id,
             error=f"INIT_ERROR: {outer}",
-            metadata={"stage": "outer", "history_messages": len(conversations.get(conv_id, [])), "request_id": _req_id},
+            metadata={"stage": "outer", "history_messages": len(conversations.get(conv_id, [])), "request_id": _cv_request_id.get()},
         )
         if DETAILED_METRICS_ENABLED:
-            await _log_chat_event("init_error", {"request_id": _req_id, "error": str(outer)})
+            await _log_chat_event("init_error", {"request_id": _cv_request_id.get(), "error": str(outer)})
         return resp
 
 
@@ -1067,13 +1083,16 @@ async def clear_conversations(_claims=Depends(require_jwt)):
 @app.get(
     "/metrics",
     summary="Prometheus-совместимые метрики",
-    description="Возвращает внутренние метрики чата. Можно ограничить через SG/ingress."
+    description="Возвращает внутренние метрики чата. Можно ограничить через SG/ingress.",
+    response_class=PlainTextResponse
 )
-async def metrics():
-    return FastAPI.responses.Response(
-        content=aggregator.render_prometheus(),
-        media_type="text/plain; version=0.0.4"
-    )
+async def metrics():  # noqa: D401
+    try:
+        data = aggregator.render_prometheus()
+    except Exception as e:  # noqa: BLE001
+        # fallback на случай непредвиденной ошибки
+        data = f"# metrics_error\nerror_info{{}} 1\n# detail: {e}"
+    return PlainTextResponse(content=data, media_type="text/plain; version=0.0.4")
 
 
 from fastapi.responses import StreamingResponse  # добавлено для стриминга

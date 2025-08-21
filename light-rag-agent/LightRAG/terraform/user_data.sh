@@ -154,6 +154,11 @@ API_MAX_REQUEST_SIZE=10MB
 # Security
 API_SECRET_KEY=change_this_in_production
 CORS_ALLOWED_ORIGINS=*
+RAG_JWT_SECRET=${RAG_JWT_SECRET}
+RAG_JWT_EXPIRE_SECONDS=3600
+RAG_ALLOWED_USERS=
+RAG_ALLOWED_ROLES=
+RAG_REQUIRE_JWT=1
 EOF
 
 
@@ -232,6 +237,9 @@ services:
       APP_LOG_LEVEL: ${APP_LOG_LEVEL}
       APP_MAX_CONVERSATION_HISTORY: ${APP_MAX_CONVERSATION_HISTORY}
       APP_ENABLE_STREAMING: ${APP_ENABLE_STREAMING}
+  RAG_JWT_SECRET: ${RAG_JWT_SECRET}
+  RAG_JWT_EXPIRE_SECONDS: 3600
+  RAG_REQUIRE_JWT: 1
       API_HOST: ${API_HOST}
       API_PORT: ${API_PORT}
       API_CORS_ORIGINS: ${API_CORS_ORIGINS}
@@ -307,34 +315,11 @@ log "containers after up:"; docker ps -a >> /var/log/lightrag-user-data.log 2>&1
 echo "Ждём readiness API..." >> /var/log/lightrag-user-data.log
 for i in {1..30}; do
   if curl -sf http://localhost:8000/health > /dev/null; then
-    environment:
-      OPENAI_API_KEY: $OPENAI_API_KEY
-      OPENAI_MODEL: $OPENAI_MODEL
-      OPENAI_TEMPERATURE: $OPENAI_TEMPERATURE
-      RAG_WORKING_DIR: $RAG_WORKING_DIR
-      RAG_EMBEDDING_MODEL: $RAG_EMBEDDING_MODEL
-      RAG_LLM_MODEL: $RAG_LLM_MODEL
-      RAG_RERANK_ENABLED: $RAG_RERANK_ENABLED
-      RAG_BATCH_SIZE: $RAG_BATCH_SIZE
-      RAG_MAX_DOCS_FOR_RERANK: $RAG_MAX_DOCS_FOR_RERANK
-      RAG_CHUNK_SIZE: $RAG_CHUNK_SIZE
-      RAG_CHUNK_OVERLAP: $RAG_CHUNK_OVERLAP
-      APP_DEBUG: $APP_DEBUG
-      APP_LOG_LEVEL: $APP_LOG_LEVEL
-      APP_MAX_CONVERSATION_HISTORY: $APP_MAX_CONVERSATION_HISTORY
-      APP_ENABLE_STREAMING: $APP_ENABLE_STREAMING
-      API_HOST: $API_HOST
-      API_PORT: $API_PORT
-      API_CORS_ORIGINS: $API_CORS_ORIGINS
-      API_ENABLE_DOCS: $API_ENABLE_DOCS
-      API_RATE_LIMIT: $API_RATE_LIMIT
-      API_MAX_REQUEST_SIZE: $API_MAX_REQUEST_SIZE
-      API_SECRET_KEY: $API_SECRET_KEY
-      CORS_ALLOWED_ORIGINS: $CORS_ALLOWED_ORIGINS
-EOF
+  echo "[bootstrap] API healthy" >> /var/log/lightrag-user-data.log
+  break
 
-systemctl enable lightrag.service
-systemctl start lightrag.service || echo "[user_data][WARN] systemd старт не критичен (контейнер уже запущен)" >> /var/log/lightrag-user-data.log
+systemctl enable lightrag.service >> /var/log/lightrag-user-data.log 2>&1 || true
+systemctl start lightrag.service >> /var/log/lightrag-user-data.log 2>&1 || echo "[user_data][WARN] systemd старт не критичен (контейнер уже запущен)" >> /var/log/lightrag-user-data.log
  
 log "final docker ps:"; docker ps -a >> /var/log/lightrag-user-data.log 2>&1 || true
 

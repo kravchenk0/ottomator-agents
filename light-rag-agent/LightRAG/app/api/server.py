@@ -384,20 +384,20 @@ async def startup_event():  # noqa: D401
 
 @app.get(
     "/",
-    summary="Ping / корневой статус",
-    description="Простой ping для проверки доступности сервера (без авторизации)."
+    summary="Ping / корневой статус (требует JWT)",
+    description="Простой ping для проверки доступности сервера. Теперь закрыт и требует JWT Bearer."
 )
-async def root():
+async def root(_claims=Depends(require_jwt)):
     return {"status": "ok", "rag_initialized": rag_manager is not None }
 
 
 @app.get(
     "/health",
     response_model=HealthResponse,
-    summary="Расширенный health-check",
-    description="Проверка статуса RAG, версии, модели и динамических параметров температуры. Доступно без авторизации."
+    summary="Расширенный health-check (требует JWT)",
+    description="Проверка статуса RAG, версии, модели и динамических параметров температуры. Теперь защищено JWT Bearer."
 )
-async def health_check():
+async def health_check(_claims=Depends(require_jwt)):
     rag_status = "healthy" if rag_manager is not None else "unhealthy"
     ms = _model_self_test or {}
     # Заглушка температурной адаптации (если модуль отсутствует)

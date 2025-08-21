@@ -126,6 +126,12 @@ variable "alb_health_check_interval" {
   default     = 15
 }
 
+variable "alb_idle_timeout" {
+  description = "ALB idle timeout in seconds (default AWS = 60). Increase if backend responses can exceed a minute without streaming."
+  type        = number
+  default     = 120
+}
+
 variable "create_vpc" {
   description = "Whether to create a new VPC"
   type        = bool

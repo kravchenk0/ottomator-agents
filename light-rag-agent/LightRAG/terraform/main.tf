@@ -404,6 +404,7 @@ resource "aws_lb" "lightrag_alb" {
   security_groups     = [aws_security_group.alb_sg[0].id]
   subnets             = [aws_subnet.lightrag_subnet.id, aws_subnet.lightrag_subnet_secondary[0].id]
   enable_deletion_protection = false
+  idle_timeout        = var.alb_idle_timeout
   tags = { Name = "${var.project_name}-alb" }
 }
 

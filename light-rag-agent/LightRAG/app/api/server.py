@@ -3,9 +3,12 @@ from __future__ import annotations
 
 import os
 import time
-from typing import Any, Dict, List, Optional
+import json
+import uuid
+import resource
+from typing import Any, Dict, List, Optional, Callable
 
-from fastapi import Header, status, FastAPI, HTTPException, Depends, UploadFile, File, Security
+from fastapi import Header, status, FastAPI, HTTPException, Depends, UploadFile, File, Security, Request
 from fastapi.openapi.utils import get_openapi
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -89,6 +92,154 @@ def require_api_key_strict(x_api_key: str | None = Header(default=None)):
 
 
 logger = setup_logger("api_server", "INFO")
+
+DETAILED_METRICS_ENABLED = os.getenv("RAG_DETAILED_METRICS", "1").lower() in {"1", "true", "yes"}
+
+
+class MetricsAggregator:
+    """Простейший агрегатор метрик в памяти (не потокобезопасен, но GIL + single-worker достаточно).
+    Хранит суммарные показатели и счётчики ошибок для Prometheus-совместимого вывода.
+    """
+    def __init__(self):
+        self._data: Dict[str, Any] = {
+            "chat_requests_total": 0,
+            "chat_requests_in_flight": 0,
+            "chat_errors_total": 0,
+            "chat_latency_sum_seconds": 0.0,
+            "chat_phase_latency_sum_seconds": {},  # phase -> sum
+            "chat_rate_limit_rejections": 0,
+        }
+
+    def start(self):
+        self._data["chat_requests_in_flight"] += 1
+
+    def end(self, ok: bool, latency: float, phases: Dict[str, float]):
+        self._data["chat_requests_total"] += 1
+        self._data["chat_requests_in_flight"] = max(0, self._data["chat_requests_in_flight"] - 1)
+        if not ok:
+            self._data["chat_errors_total"] += 1
+        self._data["chat_latency_sum_seconds"] += latency
+        for p, v in phases.items():
+            self._data["chat_phase_latency_sum_seconds"].setdefault(p, 0.0)
+            self._data["chat_phase_latency_sum_seconds"][p] += v
+
+    def rate_limited(self):
+        self._data["chat_rate_limit_rejections"] += 1
+
+    def render_prometheus(self) -> str:
+        lines = [
+            "# HELP lightrag_chat_requests_total Total chat requests",
+            "# TYPE lightrag_chat_requests_total counter",
+            f"lightrag_chat_requests_total {self._data['chat_requests_total']}",
+            "# HELP lightrag_chat_requests_in_flight Current in-flight chat requests",
+            "# TYPE lightrag_chat_requests_in_flight gauge",
+            f"lightrag_chat_requests_in_flight {self._data['chat_requests_in_flight']}",
+            "# HELP lightrag_chat_errors_total Total chat errors",
+            "# TYPE lightrag_chat_errors_total counter",
+            f"lightrag_chat_errors_total {self._data['chat_errors_total']}",
+            "# HELP lightrag_chat_latency_seconds_sum Sum of chat request latency seconds",
+            "# TYPE lightrag_chat_latency_seconds_sum counter",
+            f"lightrag_chat_latency_seconds_sum {self._data['chat_latency_sum_seconds']}",
+            "# HELP lightrag_chat_rate_limit_rejections Total chat rate limit rejections",
+            "# TYPE lightrag_chat_rate_limit_rejections counter",
+            f"lightrag_chat_rate_limit_rejections {self._data['chat_rate_limit_rejections']}",
+        ]
+        for phase, total in self._data["chat_phase_latency_sum_seconds"].items():
+            lines.append(f"lightrag_chat_phase_latency_seconds_sum{{phase=\"{phase}\"}} {total}")
+        return "\n".join(lines) + "\n"
+
+
+aggregator = MetricsAggregator()
+
+
+class PhaseTimer:
+    def __init__(self):
+        self._starts: Dict[str, float] = {}
+        self._durations: Dict[str, float] = {}
+        self._t0 = time.perf_counter()
+
+    def start(self, name: str):
+        self._starts[name] = time.perf_counter()
+
+    def end(self, name: str):
+        if name in self._starts:
+            self._durations[name] = time.perf_counter() - self._starts.pop(name)
+
+    def finish(self) -> Dict[str, float]:
+        return dict(self._durations)
+
+    @property
+    def total(self) -> float:
+        return time.perf_counter() - self._t0
+
+
+def _mem_usage_kb() -> int:
+    # ru_maxrss в KB на Linux, на macOS в байтах — нормализуем примерно
+    usage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    if usage > 10_000_000:  # вероятно байты (macOS)
+        return int(usage / 1024)
+    return usage
+
+
+async def _log_chat_event(event: str, payload: Dict[str, Any]):
+    if not DETAILED_METRICS_ENABLED:
+        return
+    try:
+        logger.info(f"chat_{event} {json.dumps(payload, ensure_ascii=False)}")
+    except Exception:
+        logger.info(f"chat_{event} (unserializable)")
+
+
+def instrument_chat(handler: Callable):
+    async def wrapper(*args, **kwargs):  # noqa: D401
+        if not DETAILED_METRICS_ENABLED:
+            return await handler(*args, **kwargs)
+        phase = PhaseTimer()
+        req_id = str(uuid.uuid4())
+        aggregator.start()
+        await _log_chat_event("start", {"request_id": req_id, "ts": time.time(), "mem_kb": _mem_usage_kb()})
+        try:
+            phase.start("handler")
+            result = await handler(*args, _req_id=req_id, _phase=phase, **kwargs)
+            phase.end("handler")
+            phases = phase.finish()
+            aggregator.end(True, phase.total, phases)
+            await _log_chat_event("end", {
+                "request_id": req_id,
+                "ok": True,
+                "total_sec": phase.total,
+                "phases": phases,
+                "mem_kb": _mem_usage_kb(),
+            })
+            return result
+        except HTTPException as he:  # propagate but log
+            phase.end("handler")
+            phases = phase.finish()
+            aggregator.end(False, phase.total, phases)
+            await _log_chat_event("end", {
+                "request_id": req_id,
+                "ok": False,
+                "status": he.status_code,
+                "detail": he.detail,
+                "total_sec": phase.total,
+                "phases": phases,
+                "mem_kb": _mem_usage_kb(),
+            })
+            raise
+        except Exception as e:  # noqa: BLE001
+            phase.end("handler")
+            phases = phase.finish()
+            aggregator.end(False, phase.total, phases)
+            await _log_chat_event("end", {
+                "request_id": req_id,
+                "ok": False,
+                "error": str(e),
+                "total_sec": phase.total,
+                "phases": phases,
+                "mem_kb": _mem_usage_kb(),
+            })
+            raise
+    return wrapper
 
 app = FastAPI(
     title="LightRAG API Server",
@@ -511,10 +662,13 @@ async def health_secure(_claims=Depends(require_jwt)):
         "system_prompt в запросе игнорируется (зафиксирован глобально). Возвращает ответ модели, id сессии и источники. Требует JWT Bearer."
     ),
 )
+@instrument_chat
 async def chat_endpoint(
     request: ChatRequest,
     rag_mgr: RAGManager = Depends(get_rag_manager),
     _claims=Depends(require_jwt),
+    _req_id: str | None = None,
+    _phase: Any | None = None,
 ):
     performance_logger.start_timer("chat_request")
     conv_id = request.conversation_id or request.conversations or f"conv_{hash(request.message) % 10000}"
@@ -537,7 +691,9 @@ async def chat_endpoint(
     if len(msgs) > MAX_HISTORY_MESSAGES * 3:
         del msgs[: len(msgs) - MAX_HISTORY_MESSAGES * 2]
     # Формируем history_context (исключая только что добавленное user сообщение)
+    if _phase: _phase.start("history")
     history_context = build_history_context(msgs, include_last_user=False)
+    if _phase: _phase.end("history")
     if history_context:
         effective_prompt = f"{system_prompt}\n\nConversation so far:\n{history_context}\n---"
     else:
@@ -557,11 +713,14 @@ async def chat_endpoint(
                     error="RAG/Agent unavailable: no OPENAI_API_KEY",
                     metadata={"stage": "init"},
                 )
-        # создаём агент: не перепутать model/system_prompt (используем именованные аргументы)
+        if _phase: _phase.start("agent_create")
         agent = _create_agent(model=request.model, system_prompt=current_prompt)
+        if _phase: _phase.end("agent_create")
         deps = _RAGDeps(rag_manager=rag_mgr)
         try:
+            if _phase: _phase.start("agent_run")
             result = await agent.run(request.message, deps=deps)
+            if _phase: _phase.end("agent_run")
             try:
                 sources = getattr(result, 'metadata', {}).get('sources') if getattr(result, 'metadata', None) else None
             except Exception:  # noqa: BLE001
@@ -571,7 +730,7 @@ async def chat_endpoint(
             meta["last_activity"] = time.time()
             performance_logger.end_timer("chat_request")
             performance_logger.log_metric("messages_processed", 1, "msg")
-            return ChatResponse(
+            resp = ChatResponse(
                 response=result.data,
                 conversation_id=conv_id,
                 sources=sources,
@@ -584,8 +743,12 @@ async def chat_endpoint(
                     "history_context_chars": len(history_context) if history_context else 0,
                     "rate_limit_remaining": _rate_limit_remaining(user_id),
                     "rate_limit_reset_seconds": _rate_limit_reset_in(user_id),
+                    "request_id": _req_id,
                 },
             )
+            if DETAILED_METRICS_ENABLED:
+                await _log_chat_event("result", {"request_id": _req_id, "conversation_id": conv_id, "history_messages": len(msgs)})
+            return resp
         except Exception as run_err:  # noqa: BLE001
             performance_logger.end_timer("chat_request")
             err_str = str(run_err)
@@ -596,7 +759,7 @@ async def chat_endpoint(
                 code = "RATE_LIMIT"
             else:
                 code = "EXECUTION_ERROR"
-            return ChatResponse(
+            resp = ChatResponse(
                 response="",
                 conversation_id=conv_id,
                 error=f"{code}: {err_str}",
@@ -604,20 +767,27 @@ async def chat_endpoint(
                     "user_id": user_id,
                     "model": request.model or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL"),
                     "processing_time": performance_logger.get_summary().get("chat_request", 0),
-            "history_messages": len(msgs),
-            "history_context_chars": len(history_context) if history_context else 0,
+                    "history_messages": len(msgs),
+                    "history_context_chars": len(history_context) if history_context else 0,
                     "rate_limit_remaining": _rate_limit_remaining(user_id),
                     "rate_limit_reset_seconds": _rate_limit_reset_in(user_id),
+                    "request_id": _req_id,
                 },
             )
+            if DETAILED_METRICS_ENABLED:
+                await _log_chat_event("error", {"request_id": _req_id, "error": code, "detail": err_str})
+            return resp
     except Exception as outer:  # noqa: BLE001
         performance_logger.end_timer("chat_request")
-        return ChatResponse(
+        resp = ChatResponse(
             response="",
             conversation_id=conv_id,
             error=f"INIT_ERROR: {outer}",
-        metadata={"stage": "outer", "history_messages": len(conversations.get(conv_id, []))},
+            metadata={"stage": "outer", "history_messages": len(conversations.get(conv_id, [])), "request_id": _req_id},
         )
+        if DETAILED_METRICS_ENABLED:
+            await _log_chat_event("init_error", {"request_id": _req_id, "error": str(outer)})
+        return resp
 
 
 @app.post(
@@ -812,6 +982,8 @@ async def issue_jwt(req: TokenRequest, _api=Security(require_api_key_strict)):
 
 def get_app() -> FastAPI:  # helper for ASGI servers
     return app
+
+
 """FastAPI application assembly (will replace api_server.py).
 
 (Шаг 1) Заглушка.
@@ -868,3 +1040,82 @@ async def clear_conversations(_claims=Depends(require_jwt)):
     conversations.clear()
     conversation_meta.clear()
     return {"status": "ok", "cleared": count, "conversations_remaining": 0}
+
+
+@app.get(
+    "/metrics",
+    summary="Prometheus-совместимые метрики",
+    description="Возвращает внутренние метрики чата. Можно ограничить через SG/ingress."
+)
+async def metrics():
+    return FastAPI.responses.Response(
+        content=aggregator.render_prometheus(),
+        media_type="text/plain; version=0.0.4"
+    )
+
+
+from fastapi.responses import StreamingResponse  # добавлено для стриминга
+
+
+@app.post(
+    "/chat/stream",
+    summary="Стриминговый чат (частичный ответ)",
+    description="Возвращает частичный ответ потоком text/event-stream чтобы удерживать соединение живым при долгой генерации. Требует JWT Bearer.")
+@instrument_chat
+async def chat_stream_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt), _req_id: str | None = None, _phase: Any | None = None):
+    performance_logger.start_timer("chat_request_stream")
+    conv_id = request.conversation_id or request.conversations or f"conv_{hash(request.message) % 10000}"
+    if not request.message or not request.message.strip():
+        performance_logger.end_timer("chat_request_stream")
+        raise HTTPException(status_code=400, detail="'message' is required and cannot be empty")
+    cleanup_expired_conversations()
+    user_id = request.user_id or (_claims.get("sub") if isinstance(_claims, dict) else None) or "anonymous"
+    _enforce_user_rate_limit(user_id)
+    msgs = conversations.setdefault(conv_id, [])
+    meta = conversation_meta.setdefault(conv_id, {"created": time.time(), "last_activity": time.time()})
+    msgs.append({"role": "user", "content": request.message})
+    if _phase: _phase.start("history")
+    history_context = build_history_context(msgs, include_last_user=False)
+    if _phase: _phase.end("history")
+    if history_context:
+        effective_prompt = f"{system_prompt}\n\nConversation so far:\n{history_context}\n---"
+    else:
+        effective_prompt = system_prompt
+    global _create_agent, _RAGDeps
+    if _create_agent is None or _RAGDeps is None:
+        if os.getenv("OPENAI_API_KEY"):
+            from app.agent.rag_agent import create_agent as _ca, RAGDeps as _rd
+            _create_agent, _RAGDeps = _ca, _rd
+        else:
+            raise HTTPException(status_code=503, detail="RAG/Agent unavailable: no OPENAI_API_KEY")
+    if _phase: _phase.start("agent_create")
+    agent = _create_agent(model=request.model, system_prompt=effective_prompt)
+    if _phase: _phase.end("agent_create")
+    deps = _RAGDeps(rag_manager=rag_mgr)
+
+    async def event_generator():
+        # Первичный ping, чтобы ALB видел активность
+        yield f"data: {{\"status\":\"started\",\"request_id\":\"{_req_id}\"}}\n\n"
+        try:
+            # Запуск основного выполнения
+            if _phase: _phase.start("agent_run")
+            result = await agent.run(request.message, deps=deps)
+            if _phase: _phase.end("agent_run")
+            msgs.append({"role": "assistant", "content": result.data})
+            meta["last_activity"] = time.time()
+            performance_logger.end_timer("chat_request_stream")
+            yield (
+                "data: " +
+                __import__("json").dumps({
+                    "status": "complete",
+                    "conversation_id": conv_id,
+                    "response": result.data,
+                    "processing_time": performance_logger.get_summary().get("chat_request_stream", 0),
+                    "history_messages": len(msgs)
+                }) + "\n\n"
+            )
+        except Exception as e:  # noqa: BLE001
+            performance_logger.end_timer("chat_request_stream")
+            yield "data: {\"status\":\"error\",\"error\": " + __import__("json").dumps(str(e)) + "}\n\n"
+        yield "event: end\ndata: end\n\n"
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

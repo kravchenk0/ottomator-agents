@@ -394,10 +394,10 @@ async def root(_claims=Depends(require_jwt)):
 @app.get(
     "/health",
     response_model=HealthResponse,
-    summary="Расширенный health-check (требует JWT)",
-    description="Проверка статуса RAG, версии, модели и динамических параметров температуры. Теперь защищено JWT Bearer."
+    summary="Расширенный health-check (открыт)",
+    description="Проверка статуса RAG, версии, модели и т.д. Открыт для ALB и мониторинга."
 )
-async def health_check(_claims=Depends(require_jwt)):
+async def health_check():
     rag_status = "healthy" if rag_manager is not None else "unhealthy"
     ms = _model_self_test or {}
     # Заглушка температурной адаптации (если модуль отсутствует)
@@ -428,6 +428,15 @@ async def health_check(_claims=Depends(require_jwt)):
 )
 async def alb_health():
     return {"status": "ok", "version": "1.0.0"}
+
+@app.get(
+    "/health-secure",
+    response_model=HealthResponse,
+    summary="Закрытый health-check (JWT)",
+    description="Та же информация что /health, но требует JWT (для внутренних проверок)."
+)
+async def health_secure(_claims=Depends(require_jwt)):
+    return await health_check()
 
 
 @app.post(

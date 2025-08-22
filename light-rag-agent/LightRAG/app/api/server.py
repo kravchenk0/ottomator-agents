@@ -1421,17 +1421,23 @@ async def _upload_document_impl(file: UploadFile, ingest: bool, rag_mgr: RAGMana
     response_model=IngestionResult
 )
 async def ingest_scan(directory: str | None = None, rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
-    # Get upload timeout from environment
-    upload_timeout = int(os.getenv("RAG_UPLOAD_TIMEOUT_SECONDS", "300"))
+    # Get upload timeout from environment, reduced to 240s (4 minutes) to be under ALB timeout
+    upload_timeout = int(os.getenv("RAG_UPLOAD_TIMEOUT_SECONDS", "240"))
     
     try:
-        return await asyncio.wait_for(
+        logger.info(f"[ingest_scan] Starting scan with timeout={upload_timeout}s, directory={directory}")
+        result = await asyncio.wait_for(
             _ingest_scan_impl(directory, rag_mgr),
             timeout=upload_timeout
         )
+        logger.info(f"[ingest_scan] Completed successfully")
+        return result
     except asyncio.TimeoutError:
         logger.error(f"Ingest scan timeout after {upload_timeout} seconds")
         raise HTTPException(status_code=504, detail=f"Ingest scan timeout after {upload_timeout} seconds")
+    except Exception as e:
+        logger.error(f"Ingest scan error: {e}")
+        raise HTTPException(status_code=500, detail=f"Ingest scan error: {str(e)}")
 
 
 async def _ingest_scan_impl(directory: str | None, rag_mgr: RAGManager):
@@ -1443,6 +1449,23 @@ async def _ingest_scan_impl(directory: str | None, rag_mgr: RAGManager):
     # 3) Папка raw_uploads внутри working_dir (загруженные файлы)
     # 4) Фолбэк /data/ingest (исторический)
     scan_dir = directory or os.getenv("RAG_INGEST_DIR") or str(Path(rag_mgr.config.working_dir) / "raw_uploads") or "/data/ingest"
+    
+    # Quick check: if directory doesn't exist, return early
+    scan_path = Path(scan_dir)
+    if not scan_path.exists():
+        logger.warning(f"[ingest_scan] Directory does not exist: {scan_dir}")
+        from app.utils.ingestion import load_index
+        idx_len = len(load_index(rag_mgr.config.working_dir))
+        return {
+            "status": "directory_not_found",
+            "directory": scan_dir,
+            "added": 0,
+            "skipped": 0,
+            "total_indexed": idx_len,
+            "details": [],
+        }
+    
+    logger.info(f"[ingest_scan] Scanning directory: {scan_dir}")
     files = scan_directory(scan_dir)
     if not files:
         # При отсутствии файлов всё равно возвращаем валидную структуру модели

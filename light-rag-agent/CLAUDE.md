@@ -1,2 +1,3 @@
 - use docs folder for documentation
 - i always deploy my code via terraform scripts
+- не создавай шелл патчей для применения изменений

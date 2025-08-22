@@ -95,17 +95,29 @@ resource "aws_route_table_association" "lightrag_rta_secondary" {
 
 # Security Group
 locals {
-  # Если включён ALB, инстанс не должен быть публично доступен на 80/443/8000.
-  # Оставляем только SSH (22) для администрирования. Доступ на 8000 даёт ALB через отдельное SG правило.
-  ingress_ports_base = var.enable_alb ? [
+  # Base ingress rules: always include SSH
+  ingress_ports_base = [
     { from = 22, to = 22, description = "SSH" }
-  ] : [
-    { from = 22,  to = 22,  description = "SSH" },
-    { from = 80,  to = 80,  description = "HTTP" },
-    { from = 443, to = 443, description = "HTTPS" },
-    { from = 8000, to = 8000, description = "LightRAG API" },
   ]
-  ingress_ports = var.debug_open_app_port ? concat(local.ingress_ports_base, [{ from = 8000, to = 8000, description = "DEBUG Public 8000" }]) : local.ingress_ports_base
+  
+  # Add HTTP/HTTPS ports only if ALB is disabled (direct access mode)
+  ingress_ports_web = var.enable_alb ? [] : [
+    { from = 80,  to = 80,  description = "HTTP" },
+    { from = 443, to = 443, description = "HTTPS" }
+  ]
+  
+  # Add port 8000 if: ALB disabled (direct mode) OR debug_open_app_port is true
+  ingress_ports_app = (!var.enable_alb || var.debug_open_app_port) ? [
+    { from = 8000, to = 8000, description = var.debug_open_app_port ? "DEBUG: Direct 8000 access" : "LightRAG API" }
+  ] : []
+  
+  # Combine all ingress rules
+  ingress_ports = concat(
+    local.ingress_ports_base,
+    local.ingress_ports_web, 
+    local.ingress_ports_app
+  )
+  
   effective_ingress_cidrs = length(var.allowed_ingress_cidrs) > 0 ? var.allowed_ingress_cidrs : ["0.0.0.0/0"]
 }
 
@@ -304,10 +316,11 @@ resource "aws_instance" "lightrag_instance" {
     project_name                = var.project_name
     OPENAI_API_KEY              = var.openai_api_key
     OPENAI_MODEL                = "gpt-5-mini"
-    OPENAI_TEMPERATURE          = 0.0
+    OPENAI_TEMPERATURE          = 0.1
     RAG_WORKING_DIR             = "/app/documents"
-    RAG_EMBEDDING_MODEL         = "gpt-5-mini"
+    RAG_EMBEDDING_MODEL         = "text-embedding-3-large"
     RAG_LLM_MODEL               = "gpt-5-mini"
+    OPENAI_FALLBACK_MODELS      = "gpt-4.1,gpt-4o-mini"
     RAG_RERANK_ENABLED          = true
     RAG_BATCH_SIZE              = 20
     RAG_MAX_DOCS_FOR_RERANK     = 20

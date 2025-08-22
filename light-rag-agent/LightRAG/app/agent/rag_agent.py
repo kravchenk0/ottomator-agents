@@ -27,36 +27,28 @@ logger = logging.getLogger(__name__)
 RAG_CACHE_TTL = int(os.getenv("RAG_CACHE_TTL_SECONDS", "300"))  # 5 минут
 _rag_cache: Dict[str, Tuple[str, float]] = {}  # {query_hash: (result, timestamp)}
 
+# Оптимизированный системный промпт для лучшей производительности
 DEFAULT_SYSTEM_PROMPT = (
-	"""Вы - узкопрофильный консультант по свободным экономическим зонам Дубая. Вы совмещаете две компетенции:
-Специалист по визовому оформлению (иммиграция, виды виз, требования резидентства, сроки, пакеты документов, спонсорство, EID, медицинские проверки)
-HR‑специалист (оформление сотрудников, типы контрактов, NOC, offer letter, probation, зарплатные требования, оформление через конкретные фризоны)
-У вас НЕТ внешнего интернета. Единственный источник фактов - корпоративное хранилище документов о фризонах (регламенты, прайс‑листы, чек‑листы, FAQ, шаблоны). Доступ к документам только через инструмент retrieve.
+	"""Вы - консультант по фризонам Дубая. Компетенции: визы/иммиграция, HR/оформление сотрудников.
 
-Жёсткие правила:
-Никогда не отвечайте по памяти. Сначала используйте retrieve минимум 1 раз на каждый запрос пользователя (и повторно при необходимости уточнения).
-Цитируйте факты с указанием источника: [Название_документа, страница/раздел]. Если документ возвращает метаданные (id, title, page, section), используйте их.
-Если в найденных документах нет ответа, честно скажите об этом и предложите уточнить запрос или подобрать альтернативные документы.
-Для чисел (стоимость лицензии, сроки, штрафы) всегда указывайте дату/версию документа, из которого взяты данные.
-Разграничивайте области: "Визы/иммиграция" vs "HR/оформление сотрудников". Если вопрос смешанный - дайте обе перспективы.
-Не давайте юридических гарантий и не заменяйте официальные консультации госорганов. Добавляйте дисклеймер при чувствительных вопросах.
-Всегда предлагайте следующий шаг (чек‑лист или набор вопросов для уточнения кейса).
+Источник данных: корпоративное хранилище документов. Доступ только через retrieve.
 
-Алгоритм ответа:
-Разобрать запрос → выделить сущности: фризона(ы), тип лицензии/деятельности, статус компании (новая/renewal), роль (владелец/сотрудник), визовый статус, количество сотрудников.
-Сформировать 2-4 целевых запроса к retrieve с разными формулировками + фильтрами (название фризоны, тип документа, год/версия).
-Объединить и дедуплицировать результаты. Проверить согласованность цифр и условий между документами одной и той же фризоны/версии.
-Синтезировать ответ в структурированном виде (кратко → детали → чек‑лист действий), с явными цитатами источников.
-Если есть расхождения между документами - явно указать это и предложить вариант проверки (например, запросить последнюю версию регламента или тарифов).
+Правила:
+1. Используйте retrieve для каждого запроса
+2. Цитируйте источники: [документ, раздел]
+3. При отсутствии данных - скажите честно
+4. Для чисел указывайте дату документа
+
+Алгоритм:
+Извлечь ключевые слова → retrieve → синтезировать ответ с источниками
 
 Формат ответа:
-Короткое резюме (2-3 строки)
-Блок "Визы / иммиграция" (при необходимости)
-Блок "HR / оформление сотрудников" (при необходимости)
-Чек‑лист шагов
-Источники (маркированный список, 1 строка на источник)
-Дисклеймер (если применимо)
-Тон: профессионально, чётко, без воды. Для ответа используй язык на котором тебя спросили."""
+- Резюме (1-2 строки)
+- Детали по категориям
+- Чек-лист шагов
+- Источники
+
+Отвечайте на языке вопроса, кратко и точно."""
 )
 
 @dataclass
@@ -101,55 +93,113 @@ def _cache_result(search_query: str, result: str) -> None:
 def _register_tools(agent: Agent) -> Agent:
 	@agent.tool
 	async def retrieve(context: RunContext[RAGDeps], search_query: str) -> str:  # type: ignore
+		import time
+		retrieve_start = time.perf_counter()
+		
 		try:
 			logger.debug(f"[retrieve] start query='{search_query}'")
 			
 			# Проверяем кэш
+			cache_start = time.perf_counter()
 			cached_result = _get_cached_result(search_query)
 			if cached_result is not None:
-				logger.debug("[retrieve] cache hit")
+				cache_time = time.perf_counter() - cache_start
+				logger.info(f"[retrieve] cache hit in {cache_time:.3f}s")
+				# Попытка логирования метрик (если доступен aggregator)
+				try:
+					from app.api.server import aggregator
+					aggregator.track_rag_retrieve(time.perf_counter() - retrieve_start)
+				except ImportError:
+					pass
 				return cached_result
 			
-			# Адаптивный таймаут: короткие запросы = быстрый поиск, длинные = глубокий поиск
+			# Адаптивный таймаут и режим поиска
 			rag = await context.deps.rag_manager.get_rag()
 			query_length = len(search_query.split())
-			if query_length <= 5:  # Простые запросы (1-5 слов)
-				retrieve_timeout = int(os.getenv("RAG_RETRIEVE_TIMEOUT_FAST", "20"))
-				search_mode = "local"  # Быстрый локальный поиск
+			
+			# Оптимизация: используем более агрессивную адаптацию
+			if query_length <= 3:  # Очень простые запросы
+				retrieve_timeout = int(os.getenv("RAG_RETRIEVE_TIMEOUT_FAST", "10"))
+				search_mode = "local"
+			elif query_length <= 7:  # Средние запросы  
+				retrieve_timeout = int(os.getenv("RAG_RETRIEVE_TIMEOUT_MEDIUM", "30"))
+				search_mode = "hybrid"
 			else:  # Сложные запросы
 				retrieve_timeout = int(os.getenv("RAG_RETRIEVE_TIMEOUT_SECONDS", "60"))
-				search_mode = "mix"  # Полный гибридный поиск
+				search_mode = "mix"
 			
-			logger.debug(f"[retrieve] query_length={query_length}, timeout={retrieve_timeout}s, mode={search_mode}")
+			logger.info(f"[retrieve] query_len={query_length}, timeout={retrieve_timeout}s, mode={search_mode}")
 			
 			try:
+				rag_start = time.perf_counter()
 				result = await asyncio.wait_for(
 					rag.aquery(search_query, param=QueryParam(mode=search_mode)),
 					timeout=retrieve_timeout
 				)
+				rag_time = time.perf_counter() - rag_start
+				logger.info(f"[retrieve] RAG query completed in {rag_time:.3f}s")
+				
 			except asyncio.TimeoutError:
-				logger.warning(f"[retrieve] timeout after {retrieve_timeout}s, using fast fallback")
-				# Быстрый fallback: возвращаем сообщение о том, что поиск занял слишком много времени
-				fallback_msg = f"Поиск по запросу '{search_query}' занял слишком много времени. Попробуйте упростить запрос."
-				_cache_result(search_query, fallback_msg)
-				return fallback_msg
+				timeout_time = time.perf_counter() - retrieve_start
+				logger.warning(f"[retrieve] timeout after {retrieve_timeout}s (total: {timeout_time:.3f}s)")
+				
+				# Интеллектуальный fallback: попробуем более быстрый режим
+				try:
+					logger.info("[retrieve] attempting fast fallback with 'local' mode")
+					fallback_start = time.perf_counter()
+					result = await asyncio.wait_for(
+						rag.aquery(search_query, param=QueryParam(mode="local")),
+						timeout=15  # Короткий таймаут для fallback
+					)
+					fallback_time = time.perf_counter() - fallback_start
+					logger.info(f"[retrieve] fast fallback succeeded in {fallback_time:.3f}s")
+				except (asyncio.TimeoutError, Exception) as fb_err:
+					logger.warning(f"[retrieve] fallback also failed: {fb_err}")
+					fallback_msg = f"Поиск по запросу '{search_query}' занял слишком много времени. Попробуйте упростить запрос."
+					_cache_result(search_query, fallback_msg)
+					# Логируем метрики даже для таймаутов
+					try:
+						from app.api.server import aggregator
+						aggregator.track_rag_retrieve(time.perf_counter() - retrieve_start)
+					except ImportError:
+						pass
+					return fallback_msg
 			
 			# Преобразуем результат в строку для кэширования
 			result_str = str(result)
 			_cache_result(search_query, result_str)
 			
-			# Лёгкая диагностика структуры результата
-			try:  # noqa: SIM105
+			# Улучшенная диагностика
+			result_size = len(result_str)
+			try:
 				if isinstance(result, list):
-					logger.debug(f"[retrieve] got list len={len(result)}")
+					logger.info(f"[retrieve] got list len={len(result)}, total_chars={result_size}")
 				elif isinstance(result, dict):
-					logger.debug(f"[retrieve] got dict keys={list(result.keys())[:6]}")
+					logger.info(f"[retrieve] got dict keys={list(result.keys())[:6]}, total_chars={result_size}")
 			except Exception:  # noqa: BLE001
 				pass
-			logger.debug("[retrieve] done")
+			
+			total_time = time.perf_counter() - retrieve_start
+			logger.info(f"[retrieve] completed in {total_time:.3f}s")
+			
+			# Логируем метрики
+			try:
+				from app.api.server import aggregator
+				aggregator.track_rag_retrieve(total_time)
+			except ImportError:
+				pass
+			
 			return result
+			
 		except Exception as e:  # noqa: BLE001
-			logger.warning(f"[retrieve] error: {e}")
+			error_time = time.perf_counter() - retrieve_start
+			logger.error(f"[retrieve] error after {error_time:.3f}s: {e}")
+			# Логируем метрики даже для ошибок
+			try:
+				from app.api.server import aggregator
+				aggregator.track_rag_retrieve(error_time)
+			except ImportError:
+				pass
 			return f"Error retrieving documents: {e}"
 	return agent
 

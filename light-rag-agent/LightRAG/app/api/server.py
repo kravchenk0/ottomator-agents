@@ -8,7 +8,7 @@ import uuid
 import resource
 import functools
 import inspect
-from typing import Any, Dict, List, Optional, Callable
+from typing import Any, Dict, List, Optional, Callable, Tuple
 
 from fastapi import Header, status, FastAPI, HTTPException, Depends, UploadFile, File, Security, Request
 from fastapi.responses import PlainTextResponse
@@ -119,45 +119,182 @@ class MetricsAggregator:
             "chat_errors_total": 0,
             "chat_latency_sum_seconds": 0.0,
             "chat_phase_latency_sum_seconds": {},  # phase -> sum
+            "chat_phase_count": {},  # phase -> count
             "chat_rate_limit_rejections": 0,
+            "chat_timeout_errors": 0,
+            "chat_model_errors": 0,
+            "chat_init_errors": 0,
+            "rag_retrieve_latency_sum_seconds": 0.0,
+            "rag_retrieve_count": 0,
+            "agent_create_latency_sum_seconds": 0.0,
+            "agent_create_count": 0,
+            "history_build_latency_sum_seconds": 0.0,
+            "history_build_count": 0,
+            "conversation_history_lengths": {},  # length bucket -> count
+            "chat_cache_hits": 0,
+            "chat_cache_misses": 0,
         }
 
     def start(self):
         self._data["chat_requests_in_flight"] += 1
 
-    def end(self, ok: bool, latency: float, phases: Dict[str, float]):
+    def end(self, ok: bool, latency: float, phases: Dict[str, float], error_type: str = None, history_length: int = 0):
         self._data["chat_requests_total"] += 1
         self._data["chat_requests_in_flight"] = max(0, self._data["chat_requests_in_flight"] - 1)
         if not ok:
             self._data["chat_errors_total"] += 1
+            # Track specific error types
+            if error_type == "timeout":
+                self._data["chat_timeout_errors"] += 1
+            elif error_type == "model":
+                self._data["chat_model_errors"] += 1
+            elif error_type == "init":
+                self._data["chat_init_errors"] += 1
+        
         self._data["chat_latency_sum_seconds"] += latency
+        
+        # Track phase metrics
         for p, v in phases.items():
             self._data["chat_phase_latency_sum_seconds"].setdefault(p, 0.0)
             self._data["chat_phase_latency_sum_seconds"][p] += v
+            self._data["chat_phase_count"].setdefault(p, 0)
+            self._data["chat_phase_count"][p] += 1
+        
+        # Track conversation history length distribution
+        if history_length > 0:
+            bucket = self._get_history_bucket(history_length)
+            self._data["conversation_history_lengths"].setdefault(bucket, 0)
+            self._data["conversation_history_lengths"][bucket] += 1
 
     def rate_limited(self):
         self._data["chat_rate_limit_rejections"] += 1
+    
+    def track_rag_retrieve(self, latency: float):
+        """Track RAG retrieve operation metrics."""
+        self._data["rag_retrieve_latency_sum_seconds"] += latency
+        self._data["rag_retrieve_count"] += 1
+    
+    def track_agent_create(self, latency: float):
+        """Track agent creation metrics."""
+        self._data["agent_create_latency_sum_seconds"] += latency
+        self._data["agent_create_count"] += 1
+    
+    def track_history_build(self, latency: float):
+        """Track history building metrics."""
+        self._data["history_build_latency_sum_seconds"] += latency
+        self._data["history_build_count"] += 1
+    
+    def track_cache_hit(self):
+        """Track cache hit."""
+        self._data["chat_cache_hits"] += 1
+    
+    def track_cache_miss(self):
+        """Track cache miss."""
+        self._data["chat_cache_misses"] += 1
+    
+    def _get_history_bucket(self, length: int) -> str:
+        """Bucket history lengths for histogram-like tracking."""
+        if length <= 2:
+            return "0-2"
+        elif length <= 5:
+            return "3-5"
+        elif length <= 10:
+            return "6-10"
+        elif length <= 20:
+            return "11-20"
+        else:
+            return "20+"
 
     def render_prometheus(self) -> str:
         lines = [
             "# HELP lightrag_chat_requests_total Total chat requests",
             "# TYPE lightrag_chat_requests_total counter",
             f"lightrag_chat_requests_total {self._data['chat_requests_total']}",
+            "",
             "# HELP lightrag_chat_requests_in_flight Current in-flight chat requests",
             "# TYPE lightrag_chat_requests_in_flight gauge",
             f"lightrag_chat_requests_in_flight {self._data['chat_requests_in_flight']}",
+            "",
             "# HELP lightrag_chat_errors_total Total chat errors",
             "# TYPE lightrag_chat_errors_total counter",
             f"lightrag_chat_errors_total {self._data['chat_errors_total']}",
+            "",
+            "# HELP lightrag_chat_timeout_errors_total Chat timeout errors",
+            "# TYPE lightrag_chat_timeout_errors_total counter", 
+            f"lightrag_chat_timeout_errors_total {self._data['chat_timeout_errors']}",
+            "",
+            "# HELP lightrag_chat_model_errors_total Chat model errors",
+            "# TYPE lightrag_chat_model_errors_total counter",
+            f"lightrag_chat_model_errors_total {self._data['chat_model_errors']}",
+            "",
+            "# HELP lightrag_chat_init_errors_total Chat initialization errors",
+            "# TYPE lightrag_chat_init_errors_total counter",
+            f"lightrag_chat_init_errors_total {self._data['chat_init_errors']}",
+            "",
             "# HELP lightrag_chat_latency_seconds_sum Sum of chat request latency seconds",
             "# TYPE lightrag_chat_latency_seconds_sum counter",
             f"lightrag_chat_latency_seconds_sum {self._data['chat_latency_sum_seconds']}",
+            "",
             "# HELP lightrag_chat_rate_limit_rejections Total chat rate limit rejections",
             "# TYPE lightrag_chat_rate_limit_rejections counter",
             f"lightrag_chat_rate_limit_rejections {self._data['chat_rate_limit_rejections']}",
+            "",
+            "# HELP lightrag_rag_retrieve_latency_seconds_sum Sum of RAG retrieve operation latency",
+            "# TYPE lightrag_rag_retrieve_latency_seconds_sum counter",
+            f"lightrag_rag_retrieve_latency_seconds_sum {self._data['rag_retrieve_latency_sum_seconds']}",
+            "",
+            "# HELP lightrag_rag_retrieve_total Total RAG retrieve operations",
+            "# TYPE lightrag_rag_retrieve_total counter",
+            f"lightrag_rag_retrieve_total {self._data['rag_retrieve_count']}",
+            "",
+            "# HELP lightrag_agent_create_latency_seconds_sum Sum of agent creation latency",
+            "# TYPE lightrag_agent_create_latency_seconds_sum counter",
+            f"lightrag_agent_create_latency_seconds_sum {self._data['agent_create_latency_sum_seconds']}",
+            "",
+            "# HELP lightrag_agent_create_total Total agent creation operations",
+            "# TYPE lightrag_agent_create_total counter",
+            f"lightrag_agent_create_total {self._data['agent_create_count']}",
+            "",
+            "# HELP lightrag_history_build_latency_seconds_sum Sum of history building latency",
+            "# TYPE lightrag_history_build_latency_seconds_sum counter",
+            f"lightrag_history_build_latency_seconds_sum {self._data['history_build_latency_sum_seconds']}",
+            "",
+            "# HELP lightrag_history_build_total Total history building operations",
+            "# TYPE lightrag_history_build_total counter",
+            f"lightrag_history_build_total {self._data['history_build_count']}",
+            "",
+            "# HELP lightrag_chat_cache_hits_total Chat cache hits",
+            "# TYPE lightrag_chat_cache_hits_total counter",
+            f"lightrag_chat_cache_hits_total {self._data['chat_cache_hits']}",
+            "",
+            "# HELP lightrag_chat_cache_misses_total Chat cache misses", 
+            "# TYPE lightrag_chat_cache_misses_total counter",
+            f"lightrag_chat_cache_misses_total {self._data['chat_cache_misses']}",
+            "",
+            "# HELP lightrag_chat_phase_latency_seconds_sum Sum of chat phase latency by phase",
+            "# TYPE lightrag_chat_phase_latency_seconds_sum counter",
         ]
+        
+        # Phase latency metrics
         for phase, total in self._data["chat_phase_latency_sum_seconds"].items():
             lines.append(f"lightrag_chat_phase_latency_seconds_sum{{phase=\"{phase}\"}} {total}")
+        
+        lines.append("")
+        lines.append("# HELP lightrag_chat_phase_count_total Count of chat phases by phase")
+        lines.append("# TYPE lightrag_chat_phase_count_total counter")
+        
+        # Phase count metrics
+        for phase, count in self._data["chat_phase_count"].items():
+            lines.append(f"lightrag_chat_phase_count_total{{phase=\"{phase}\"}} {count}")
+        
+        lines.append("")
+        lines.append("# HELP lightrag_conversation_history_length Distribution of conversation history lengths")
+        lines.append("# TYPE lightrag_conversation_history_length counter")
+        
+        # History length distribution
+        for bucket, count in self._data["conversation_history_lengths"].items():
+            lines.append(f"lightrag_conversation_history_length{{bucket=\"{bucket}\"}} {count}")
+        
         return "\n".join(lines) + "\n"
 
 
@@ -223,7 +360,7 @@ def instrument_chat(handler: Callable):
             result = await handler(*args, **kwargs)
             phase.end("handler")
             phases = phase.finish()
-            aggregator.end(True, phase.total, phases)
+            aggregator.end(True, phase.total, phases, history_length=getattr(handler, '_history_length', 0))
             await _log_chat_event("end", {
                 "request_id": req_id,
                 "ok": True,
@@ -235,7 +372,8 @@ def instrument_chat(handler: Callable):
         except HTTPException as he:  # propagate but log
             phase.end("handler")
             phases = phase.finish()
-            aggregator.end(False, phase.total, phases)
+            error_type = "model" if he.status_code in [400, 422] else "timeout" if he.status_code == 504 else "other"
+            aggregator.end(False, phase.total, phases, error_type=error_type)
             await _log_chat_event("end", {
                 "request_id": req_id,
                 "ok": False,
@@ -249,7 +387,7 @@ def instrument_chat(handler: Callable):
         except Exception as e:  # noqa: BLE001
             phase.end("handler")
             phases = phase.finish()
-            aggregator.end(False, phase.total, phases)
+            aggregator.end(False, phase.total, phases, error_type="init")
             await _log_chat_event("end", {
                 "request_id": req_id,
                 "ok": False,
@@ -417,19 +555,47 @@ def _format_history(relevant: List[Dict[str, str]]) -> str:
 
 
 async def build_history_context_async(messages: List[Dict[str, str]], include_last_user: bool = False) -> str:
-    """Асинхронно собирает историю. Для больших списков (>{ASYNC_HISTORY_THRESHOLD}) выполняет форматирование в thread executor.
+    """Асинхронно собирает историю с умной обрезкой для производительности.
 
-    Оптимизация: избегаем блокирования event loop при длинных историях.
+    Оптимизация: избегаем блокирования event loop при длинных историях + умная обрезка.
     """
     if not messages:
         return ""
-    relevant = messages[-MAX_HISTORY_MESSAGES:]
+    
+    # Умная обрезка: сохраняем важные сообщения
+    relevant = _smart_truncate_history(messages, MAX_HISTORY_MESSAGES)
+    
     if not include_last_user and relevant and relevant[-1].get("role") == "user":
         relevant = relevant[:-1]
     if len(relevant) <= ASYNC_HISTORY_THRESHOLD:
         return _format_history(relevant)
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _format_history, relevant)
+
+def _smart_truncate_history(messages: List[Dict[str, str]], max_messages: int) -> List[Dict[str, str]]:
+    """Умная обрезка истории: сохраняем первое и последние сообщения, пропускаем середину."""
+    if len(messages) <= max_messages:
+        return messages
+    
+    # Всегда сохраняем последние сообщения (они наиболее релевантны)
+    keep_recent = max_messages // 2
+    recent_messages = messages[-keep_recent:]
+    
+    # Сохраняем начальные сообщения для контекста
+    keep_initial = max_messages - keep_recent
+    if keep_initial > 0:
+        initial_messages = messages[:keep_initial]
+        # Добавляем маркер о пропущенных сообщениях
+        if len(messages) > max_messages:
+            gap_message = {
+                "role": "system", 
+                "content": f"[Пропущено {len(messages) - max_messages} сообщений для оптимизации производительности]"
+            }
+            return initial_messages + [gap_message] + recent_messages
+        else:
+            return initial_messages + recent_messages
+    else:
+        return recent_messages
 
 # Простой performance logger fallback (используется чатом)
 class _PerfLogger:
@@ -448,6 +614,36 @@ class _PerfLogger:
         return self._timers
 
 performance_logger = _PerfLogger()
+
+# Chat response caching
+CHAT_CACHE_TTL = int(os.getenv("RAG_CHAT_CACHE_TTL_SECONDS", "1800"))  # 30 минут
+_chat_cache: Dict[str, Tuple[ChatResponse, float]] = {}  # {cache_key: (response, timestamp)}
+
+def _get_chat_cache_key(message: str, conversation_id: str, user_id: str, model: str) -> str:
+    """Generate cache key for chat responses."""
+    import hashlib
+    cache_data = f"{message}|{conversation_id}|{user_id}|{model}"
+    return hashlib.md5(cache_data.encode('utf-8')).hexdigest()
+
+def _get_cached_chat_response(cache_key: str) -> Optional[ChatResponse]:
+    """Get cached chat response if still valid."""
+    if cache_key in _chat_cache:
+        response, timestamp = _chat_cache[cache_key]
+        if time.time() - timestamp < CHAT_CACHE_TTL:
+            return response
+        else:
+            del _chat_cache[cache_key]
+    return None
+
+def _cache_chat_response(cache_key: str, response: ChatResponse) -> None:
+    """Cache chat response."""
+    _chat_cache[cache_key] = (response, time.time())
+    # Simple cleanup: remove old entries if cache gets too large
+    if len(_chat_cache) > 500:  # Keep cache size reasonable
+        now = time.time()
+        expired_keys = [k for k, (_, ts) in _chat_cache.items() if now - ts > CHAT_CACHE_TTL]
+        for k in expired_keys:
+            del _chat_cache[k]
 
 
 class ChatRequest(BaseModel):
@@ -754,11 +950,30 @@ async def chat_endpoint(
         performance_logger.end_timer("chat_request")
         raise HTTPException(status_code=400, detail="'message' is required and cannot be empty")
 
-    # --- Conversation memory (этап 2) ---
-    # Фоновая очистка диалогов выполняется в отдельной задаче
     # User id для лимитов
     user_id = request.user_id or (_claims.get("sub") if isinstance(_claims, dict) else None) or "anonymous"
-    # Rate limit enforcement
+    
+    # Check cache first (for identical questions, skip rate limits for cache hits)
+    model_name = request.model or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-4o-mini"
+    cache_key = _get_chat_cache_key(request.message, conv_id, user_id, model_name)
+    
+    if phase: phase.start("cache_check")
+    cached_response = _get_cached_chat_response(cache_key)
+    if phase: phase.end("cache_check")
+    
+    if cached_response:
+        logger.info(f"[chat] cache hit for user={user_id}, conv={conv_id}")
+        aggregator.track_cache_hit()
+        # Update conversation_id in cached response
+        cached_response.conversation_id = conv_id
+        cached_response.metadata["cached"] = True
+        cached_response.metadata["cache_hit_time"] = time.time()
+        return cached_response
+    
+    # Track cache miss
+    aggregator.track_cache_miss()
+    
+    # Rate limit enforcement (only for non-cached requests)
     _enforce_user_rate_limit(user_id)
     msgs = conversations.setdefault(conv_id, [])  # существующая или новая история
     meta = conversation_meta.setdefault(conv_id, {"created": time.time(), "last_activity": time.time()})
@@ -770,9 +985,13 @@ async def chat_endpoint(
     # Формируем history_context (исключая только что добавленное user сообщение)
     # Берём phase из contextvar, а если отсутствует (старый decorator) — используем _phase если передан
     phase = _cv_phase.get() or _phase
-    if phase: phase.start("history")
+    if phase: 
+        phase.start("history")
+        history_start = time.perf_counter()
     history_context = await build_history_context_async(msgs, include_last_user=False)
-    if phase: phase.end("history")
+    if phase: 
+        phase.end("history")
+        aggregator.track_history_build(time.perf_counter() - history_start)
     if history_context:
         effective_prompt = f"{system_prompt}\n\nConversation so far:\n{history_context}\n---"
     else:
@@ -792,14 +1011,31 @@ async def chat_endpoint(
                     error="RAG/Agent unavailable: no OPENAI_API_KEY",
                     metadata={"stage": "init"},
                 )
-        if phase: phase.start("agent_create")
+        if phase: 
+            phase.start("agent_create")
+            agent_create_start = time.perf_counter()
         agent = _create_agent(model=request.model, system_prompt=current_prompt)
-        if phase: phase.end("agent_create")
+        if phase: 
+            phase.end("agent_create")
+            aggregator.track_agent_create(time.perf_counter() - agent_create_start)
         deps = _RAGDeps(rag_manager=rag_mgr)
         try:
             if phase: phase.start("agent_run")
-            # Увеличиваем таймаут для продакшена - сложные RAG запросы могут занимать до 2 минут
-            agent_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "120"))
+            
+            # Адаптивный таймаут на основе сложности запроса и истории
+            base_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "120"))
+            query_words = len(request.message.split())
+            history_length = len(msgs)
+            
+            # Оптимизация: простые запросы = короткий таймаут, сложные = длинный
+            if query_words <= 5 and history_length <= 3:
+                agent_timeout = min(base_timeout, 45)  # Простые запросы
+            elif query_words <= 15 and history_length <= 8:
+                agent_timeout = min(base_timeout, 75)  # Средние запросы
+            else:
+                agent_timeout = base_timeout  # Сложные запросы
+            
+            logger.info(f"[chat] adaptive timeout: {agent_timeout}s (query_words={query_words}, history_len={history_length})")
             result = await asyncio.wait_for(
                 agent.run(request.message, deps=deps),
                 timeout=agent_timeout
@@ -814,6 +1050,10 @@ async def chat_endpoint(
             meta["last_activity"] = time.time()
             performance_logger.end_timer("chat_request")
             performance_logger.log_metric("messages_processed", 1, "msg")
+            
+            # Track successful completion with detailed metrics
+            phases = phase.finish() if phase else {}
+            aggregator.end(True, phase.total if phase else 0, phases, history_length=len(msgs))
             resp = ChatResponse(
                 response=result.data,
                 conversation_id=conv_id,
@@ -828,13 +1068,23 @@ async def chat_endpoint(
                     "rate_limit_remaining": _rate_limit_remaining(user_id),
                     "rate_limit_reset_seconds": _rate_limit_reset_in(user_id),
                     "request_id": _cv_request_id.get(),
+                    "cached": False,
                 },
             )
+            
+            # Cache successful responses (only for non-error responses)
+            if result.data and len(result.data.strip()) > 10:  # Cache substantial responses
+                _cache_chat_response(cache_key, resp)
+                logger.info(f"[chat] cached response for future use, key={cache_key[:8]}...")
+            
             if DETAILED_METRICS_ENABLED:
                 await _log_chat_event("result", {"request_id": _cv_request_id.get(), "conversation_id": conv_id, "history_messages": len(msgs)})
             return resp
         except asyncio.TimeoutError:
             performance_logger.end_timer("chat_request")
+            if phase: phase.end("agent_run")
+            phases = phase.finish() if phase else {}
+            aggregator.end(False, phase.total if phase else 0, phases, error_type="timeout", history_length=len(msgs))
             resp = ChatResponse(
                 response="Запрос занял слишком много времени. Попробуйте упростить вопрос или повторить позже.",
                 conversation_id=conv_id,
@@ -844,21 +1094,30 @@ async def chat_endpoint(
                     "model": request.model or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL"),
                     "timeout_seconds": agent_timeout,
                     "request_id": _cv_request_id.get(),
+                    "history_messages": len(msgs),
                 },
             )
             return resp
         except Exception as run_err:  # noqa: BLE001
             performance_logger.end_timer("chat_request")
+            if phase: phase.end("agent_run")
+            phases = phase.finish() if phase else {}
             err_str = str(run_err)
             # Попытка классифицировать
             if "model_not_found" in err_str or "does not exist" in err_str:
                 code = "MODEL_NOT_FOUND"
+                error_type = "model"
             elif "rate limit" in err_str.lower():
                 code = "RATE_LIMIT"
+                error_type = "model"
             elif "timeout" in err_str.lower():
                 code = "TIMEOUT"
+                error_type = "timeout"
             else:
                 code = "EXECUTION_ERROR"
+                error_type = "model"
+            
+            aggregator.end(False, phase.total if phase else 0, phases, error_type=error_type, history_length=len(msgs))
             resp = ChatResponse(
                 response="",
                 conversation_id=conv_id,
@@ -879,6 +1138,9 @@ async def chat_endpoint(
             return resp
     except Exception as outer:  # noqa: BLE001
         performance_logger.end_timer("chat_request")
+        phases = phase.finish() if phase else {}
+        aggregator.end(False, phase.total if phase else 0, phases, error_type="init", 
+                      history_length=len(conversations.get(conv_id, [])))
         resp = ChatResponse(
             response="",
             conversation_id=conv_id,

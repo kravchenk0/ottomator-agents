@@ -33,6 +33,40 @@ def _index_path(working_dir: str | Path) -> Path:
     return p
 
 
+def _normalize_file_key(file_path: Path, working_dir: str | Path) -> str:
+    """Normalize file path for consistent index storage.
+    
+    Always store paths relative to working_dir to avoid absolute/relative path conflicts.
+    """
+    try:
+        working_path = Path(working_dir).resolve()
+        file_str = str(file_path)
+        
+        # Special handling for paths starting with "documents/"
+        # This is a common pattern where documents/ refers to the working_dir
+        if file_str.startswith("documents/"):
+            # Remove the "documents/" prefix and treat as relative to working_dir
+            relative_part = file_str[len("documents/"):]
+            file_abs = (working_path / relative_part).resolve()
+        elif file_path.is_absolute():
+            # Absolute path - use as-is
+            file_abs = file_path.resolve()
+        else:
+            # Other relative path - assume it's relative to working_dir
+            file_abs = (working_path / file_path).resolve()
+        
+        # Try to make it relative to working_dir
+        try:
+            relative = file_abs.relative_to(working_path)
+            return str(relative)
+        except ValueError:
+            # File is outside working_dir, use absolute path
+            return str(file_abs)
+    except Exception:
+        # Fallback to original string representation
+        return str(file_path)
+
+
 def load_index(working_dir: str | Path) -> Dict[str, Any]:
     path = _index_path(working_dir)
     if path.exists():
@@ -54,8 +88,9 @@ def compute_hash(content: bytes) -> str:
     return hashlib.sha256(content).hexdigest()
 
 
-def should_ingest(file_path: Path, idx: Dict[str, Any], content_hash: str) -> bool:
-    rec = idx.get(str(file_path))
+def should_ingest(file_path: Path, idx: Dict[str, Any], content_hash: str, working_dir: str | Path) -> bool:
+    key = _normalize_file_key(file_path, working_dir)
+    rec = idx.get(key)
     if not rec:
         return True
     return rec.get("hash") != content_hash or rec.get("size") != file_path.stat().st_size
@@ -148,7 +183,7 @@ async def ingest_files(rag, files: Iterable[Path], working_dir: str | Path,
             elif status == "ready":
                 try:
                     h = compute_hash(content_bytes)
-                    if not should_ingest(fp, idx, h):
+                    if not should_ingest(fp, idx, h, working_dir):
                         details.append({"file": str(fp), "status": "skip", "reason": "unchanged"})
                         skipped += 1
                         continue
@@ -166,7 +201,8 @@ async def ingest_files(rag, files: Iterable[Path], working_dir: str | Path,
                 async with semaphore:
                     try:
                         await rag.ainsert(text)
-                        updates_to_index[str(fp)] = {"hash": h, "size": size}
+                        key = _normalize_file_key(fp, working_dir)
+                        updates_to_index[key] = {"hash": h, "size": size}
                         details.append({"file": str(fp), "status": "ingested"})
                         return True
                     except Exception as e:  # noqa: BLE001
@@ -229,12 +265,20 @@ def delete_from_index(working_dir: str | Path, files: Iterable[str | Path]) -> D
     removed = 0
     not_found: List[str] = []
     for f in files:
-        k = str(Path(f))
-        if k in idx:
-            del idx[k]
+        # Try both original path and normalized path
+        original_key = str(Path(f))
+        normalized_key = _normalize_file_key(Path(f), working_dir)
+        
+        # Remove by original key first
+        if original_key in idx:
+            del idx[original_key]
+            removed += 1
+        # Also try normalized key if different
+        elif normalized_key != original_key and normalized_key in idx:
+            del idx[normalized_key]
             removed += 1
         else:
-            not_found.append(k)
+            not_found.append(original_key)
     save_index(working_dir, idx)
     return {"removed": removed, "not_found": not_found, "total_indexed": len(idx)}
 
@@ -243,3 +287,77 @@ def clear_index(working_dir: str | Path) -> Dict[str, Any]:
     """Completely clear the ingestion index file."""
     save_index(working_dir, {})
     return {"cleared": True, "total_indexed": 0}
+
+
+def cleanup_duplicate_paths(working_dir: str | Path) -> Dict[str, Any]:
+    """Clean up duplicate file paths in the index (absolute vs relative).
+    
+    This function normalizes all paths and removes duplicates, keeping the entry
+    with the most recent timestamp or the longest path (more specific).
+    """
+    idx = load_index(working_dir)
+    if not idx:
+        return {"cleaned": 0, "kept": 0, "total_indexed": 0}
+    
+    # Group entries by normalized path
+    normalized_groups: Dict[str, List[Tuple[str, Dict[str, Any]]]] = {}
+    
+    for original_key, entry in idx.items():
+        try:
+            # Try to normalize the path
+            path_obj = Path(original_key)
+            normalized_key = _normalize_file_key(path_obj, working_dir)
+            
+            if normalized_key not in normalized_groups:
+                normalized_groups[normalized_key] = []
+            normalized_groups[normalized_key].append((original_key, entry))
+        except Exception:
+            # Keep problematic entries as-is using original key
+            if original_key not in normalized_groups:
+                normalized_groups[original_key] = []
+            normalized_groups[original_key].append((original_key, entry))
+    
+    # Build new index with deduplicated entries
+    new_idx = {}
+    cleaned_count = 0
+    
+    for normalized_key, entries in normalized_groups.items():
+        if len(entries) == 1:
+            # No duplicates, keep as-is
+            original_key, entry = entries[0]
+            new_idx[normalized_key] = entry
+        else:
+            # Multiple entries, pick the best one
+            # Prefer: 1) Most recent timestamp, 2) Longest path (more specific), 3) First one
+            best_entry = None
+            best_key = None
+            
+            for original_key, entry in entries:
+                if best_entry is None:
+                    best_entry = entry
+                    best_key = original_key
+                else:
+                    # Compare timestamps if available
+                    current_time = entry.get("timestamp", 0)
+                    best_time = best_entry.get("timestamp", 0)
+                    
+                    if current_time > best_time:
+                        best_entry = entry
+                        best_key = original_key
+                    elif current_time == best_time and len(original_key) > len(best_key):
+                        # Same timestamp, prefer longer (more specific) path
+                        best_entry = entry
+                        best_key = original_key
+            
+            new_idx[normalized_key] = best_entry
+            cleaned_count += len(entries) - 1
+    
+    # Save the cleaned index
+    save_index(working_dir, new_idx)
+    
+    return {
+        "cleaned": cleaned_count,
+        "kept": len(new_idx),
+        "total_indexed": len(new_idx),
+        "original_count": len(idx)
+    }

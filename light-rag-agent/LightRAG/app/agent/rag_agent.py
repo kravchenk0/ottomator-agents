@@ -131,6 +131,7 @@ def _register_tools(agent: Agent) -> Agent:
 			
 			rag = await context.deps.rag_manager.get_rag()
 			
+			query_length = len(search_query)
 			logger.info(f"[retrieve] query_len={query_length}, timeout={retrieve_timeout}s, mode={search_mode}")
 			
 			try:

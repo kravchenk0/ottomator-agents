@@ -28,7 +28,7 @@ try:  # автозагрузка .env если присутствует (лок�
         load_dotenv(_dotenv_path)
 except Exception:
     pass
-from app.utils.ingestion import scan_directory, list_index, ingest_files
+from app.utils.ingestion import scan_directory, list_index, ingest_files, cleanup_duplicate_paths
 from app.utils.auth import require_jwt, issue_token
 from app.utils.s3_storage import get_s3_storage, S3StorageAdapter
 
@@ -1588,6 +1588,17 @@ async def ingest_delete(req: DeleteRequest, rag_mgr: RAGManager = Depends(get_ra
 )
 async def ingest_clear(rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
     result = clear_index(rag_mgr.config.working_dir)
+    return {"status": "ok", **result}
+
+
+@app.post(
+    "/documents/ingest/cleanup-duplicates",
+    summary="Очистить дубликаты путей",
+    description="Удаляет дубликаты файлов с разными путями (абсолютные/относительные). Требует JWT Bearer.",
+    response_model=dict
+)
+async def ingest_cleanup_duplicates(rag_mgr: RAGManager = Depends(get_rag_manager), _claims=Depends(require_jwt)):
+    result = cleanup_duplicate_paths(rag_mgr.config.working_dir)
     return {"status": "ok", **result}
 
 

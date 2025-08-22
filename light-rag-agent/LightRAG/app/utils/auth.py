@@ -26,7 +26,7 @@ class JWTConfig:
         self.secret = os.getenv("RAG_JWT_SECRET")
         self.alg = os.getenv("RAG_JWT_ALG", "HS256")
         try:
-            self.expire_seconds = int(os.getenv("RAG_JWT_EXPIRE_SECONDS", "3600"))
+            self.expire_seconds = int(os.getenv("RAG_JWT_EXPIRE_SECONDS", "600000"))
         except ValueError:
             self.expire_seconds = 3600
         self.allowed_users: Optional[Set[str]] = None

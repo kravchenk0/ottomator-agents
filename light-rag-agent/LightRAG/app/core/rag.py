@@ -98,15 +98,15 @@ async def dynamic_openai_complete(prompt: str, *args, **kwargs) -> str:  # noqa:
 	api_key = os.getenv("OPENAI_API_KEY")
 	if not api_key:
 		raise ValueError("OPENAI_API_KEY is required for dynamic_openai_complete")
-	primary_model = os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-5-mini"
+	primary_model = os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-4o-mini"
 	fallback_env = os.getenv("OPENAI_FALLBACK_MODELS", "").strip()
 	fallback_list = [m.strip() for m in fallback_env.split(",") if m.strip()]
 	models_to_try: List[str] = []
 	if primary_model:
 		models_to_try.append(primary_model)
-	# Ensure at least one stable fallback (gpt-5-mini).
-	if primary_model != "gpt-5-mini" and "gpt-5-mini" not in fallback_list:
-		fallback_list.append("gpt-5-mini")
+	# Ensure at least one stable fallback (gpt-4o-mini).
+	if primary_model != "gpt-4o-mini" and "gpt-4o-mini" not in fallback_list:
+		fallback_list.append("gpt-4o-mini")
 	for m in fallback_list:
 		if m not in models_to_try:
 			models_to_try.append(m)
@@ -114,13 +114,34 @@ async def dynamic_openai_complete(prompt: str, *args, **kwargs) -> str:  # noqa:
 		temperature = float(os.getenv("OPENAI_TEMPERATURE", "0") or 0)
 	except ValueError:
 		temperature = 0.0
-	# Увеличиваем таймаут для OpenAI запросов (для сложных RAG операций)
-	timeout_seconds = int(os.getenv("OPENAI_TIMEOUT_SECONDS", "60"))
-	client = AsyncOpenAI(api_key=api_key, timeout=timeout_seconds)
+	# Оптимизированные таймауты для OpenAI запросов
+	timeout_seconds = int(os.getenv("OPENAI_TIMEOUT_SECONDS", "90"))
+	
+	# Настройка retry стратегии для уменьшения warning'ов
+	from openai import AsyncOpenAI
+	import httpx
+	
+	# Создаем HTTP клиент с оптимизированными настройками
+	http_client = httpx.AsyncClient(
+		timeout=timeout_seconds,
+		limits=httpx.Limits(max_connections=20, max_keepalive_connections=5)
+	)
+	
+	client = AsyncOpenAI(
+		api_key=api_key, 
+		timeout=timeout_seconds,
+		max_retries=2,  # Уменьшаем количество retry с 3 до 2
+		http_client=http_client
+	)
 	last_error: Exception | None = None
 	for model_name in models_to_try:
 		try:
-			logger.debug(f"dynamic_openai_complete: trying model={model_name} with timeout={timeout_seconds}s")
+			# Сократим логирование для уменьшения noise
+			if model_name == primary_model:
+				logger.info(f"OpenAI request: model={model_name}, timeout={timeout_seconds}s")
+			else:
+				logger.info(f"OpenAI fallback: model={model_name}")
+			
 			def _messages():
 				return [
 					{"role": "system", "content": kwargs.get("system_prompt", "You are a helpful assistant.")},
@@ -146,7 +167,7 @@ async def dynamic_openai_complete(prompt: str, *args, **kwargs) -> str:  # noqa:
 				if ("Unsupported value" in es or "unsupported_value" in es) and "temperature" in es:
 					_models_reject_any_temp.add(model_name)
 					if not _temperature_auto_adjust_done:
-						logger.warning("Auto-adjust: model rejected explicit temperature; omitting going forward.")
+						logger.info(f"Model {model_name} doesn't support temperature parameter, auto-adjusting")
 						_temperature_auto_adjust_done = True
 					resp = await client.chat.completions.create(
 						model=model_name, 
@@ -163,7 +184,16 @@ async def dynamic_openai_complete(prompt: str, *args, **kwargs) -> str:  # noqa:
 			return content
 		except Exception as e:  # noqa: BLE001
 			last_error = e
-			logger.warning(f"dynamic_openai_complete: model '{model_name}' failed: {e}")
+			error_str = str(e)
+			# Классифицируем ошибки для более подходящего уровня логирования
+			if "timed out" in error_str.lower() or "timeout" in error_str.lower():
+				logger.error(f"Model '{model_name}' timeout after {timeout_seconds}s: {error_str[:100]}")
+			elif "rate limit" in error_str.lower():
+				logger.warning(f"Model '{model_name}' rate limited: {error_str[:100]}")
+			elif "does not exist" in error_str.lower():
+				logger.error(f"Model '{model_name}' not found: {error_str[:100]}")
+			else:
+				logger.warning(f"Model '{model_name}' failed: {error_str[:150]}")
 			continue
 	try:
 		logger.warning("dynamic_openai_complete: falling back to bundled gpt_4o_mini_complete helper")

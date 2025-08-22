@@ -84,6 +84,6 @@ data/
 # Nginx конфигурация (отдельный контейнер)
 nginx/
 
-# Tools и скрипты (не нужны в runtime)
-tools/
+# Tools и скрипты - ingest_local.py нужен в runtime для загрузки документов
+# tools/ - commented out to include ingest_local.py
 scripts/

@@ -32,6 +32,7 @@ RUN pip install --no-cache-dir --upgrade pip --retries ${PIP_RETRIES} --default-
 
 # Copy application code (исключаем секреты и ненужные файлы)
 COPY app/ ./app/
+COPY tools/ ./tools/
 COPY config.yaml ./
 COPY start_api.sh ./
 

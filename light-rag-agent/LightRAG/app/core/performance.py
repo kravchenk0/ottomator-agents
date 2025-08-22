@@ -108,13 +108,13 @@ class QueryOptimizer:
         words = len(query.split())
         
         if words <= 3:
-            return 10  # Very fast
+            return 30  # Fast but sufficient
         elif words <= 7:
-            return 20  # Fast
+            return 60  # Good for medium queries
         elif words <= 15:
-            return 30  # Medium
+            return 75  # More time for complex queries
         else:
-            return 45  # Conservative for complex queries
+            return 90  # Full timeout for very complex queries
     
     @staticmethod
     def should_use_cache(query: str) -> bool:

@@ -75,19 +75,24 @@ variable "use_amazon_linux_2023" {
   default     = false
 }
 variable "openai_api_key" {
-  description = "OpenAI API key"
+  description = "OpenAI API key (optional - will be read from .env file if not provided)"
   type        = string
+  default     = ""
+  sensitive   = true
 }
 
 variable "rag_jwt_secret" {
-  description = "RAG JWT secret"
+  description = "RAG JWT secret (optional - will be auto-generated if not provided)"
   type        = string
+  default     = ""
+  sensitive   = true
 }
 
 variable "rag_api_keys" {
-  description = "Comma-separated list of API keys for /auth/token (RAG_API_KEYS)"
+  description = "Comma-separated list of API keys for /auth/token (optional - will be read from .env file if not provided)"
   type        = string
   default     = "" # оставить пустым => выдача токенов отключится (strict зависимость вернёт 503)
+  sensitive   = true
 }
 
 variable "domain_name" {

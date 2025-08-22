@@ -1094,7 +1094,7 @@ async def chat_endpoint(
             agent_timeout = query_optimizer.get_optimal_timeout(request.message)
             
             # Ограничиваем максимальный таймаут
-            max_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "30"))  # Снижено с 120
+            max_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "90"))  # Updated for complex queries
             agent_timeout = min(agent_timeout, max_timeout)
             
             query_words = len(request.message.split())
@@ -1729,7 +1729,7 @@ async def chat_stream_endpoint(request: ChatRequest, rag_mgr: RAGManager = Depen
         try:
             # Запуск основного выполнения с таймаутом (стриминг версия)
             if phase: phase.start("agent_run")
-            agent_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "120"))
+            agent_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "90"))
             result = await asyncio.wait_for(
                 agent.run(request.message, deps=deps),
                 timeout=agent_timeout

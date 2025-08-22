@@ -314,7 +314,7 @@ resource "aws_instance" "lightrag_instance" {
   # user_data: НЕ base64encode — провайдер сам кодирует. Иначе размер удваивается и превышает лимит 16KB.
   user_data = templatefile("${path.module}/user_data.sh", {
     project_name                = var.project_name
-    OPENAI_API_KEY              = var.openai_api_key
+    OPENAI_API_KEY              = local.openai_api_key
     OPENAI_MODEL                = "gpt-5-mini"
     OPENAI_TEMPERATURE          = 0.1
     RAG_WORKING_DIR             = "/app/documents"
@@ -336,11 +336,11 @@ resource "aws_instance" "lightrag_instance" {
     API_ENABLE_DOCS             = false
     API_RATE_LIMIT              = 100
     API_MAX_REQUEST_SIZE        = "10MB"
-    API_SECRET_KEY              = var.rag_jwt_secret
+    API_SECRET_KEY              = local.rag_jwt_secret
     CORS_ALLOWED_ORIGINS        = "*"
     GITHUB_TOKEN                = var.github_token
-  RAG_JWT_SECRET              = var.rag_jwt_secret
-  RAG_API_KEYS                = var.rag_api_keys
+  RAG_JWT_SECRET              = local.rag_jwt_secret
+  RAG_API_KEYS                = local.rag_api_keys
   ALLOWED_INGRESS_CIDRS       = join(" ", var.allowed_ingress_cidrs)
   AWS_S3_BUCKET               = aws_s3_bucket.lightrag_documents.bucket
   AWS_REGION                  = var.aws_region

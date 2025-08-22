@@ -953,6 +953,9 @@ async def chat_endpoint(
     # User id для лимитов
     user_id = request.user_id or (_claims.get("sub") if isinstance(_claims, dict) else None) or "anonymous"
     
+    # Get phase from contextvar early (used throughout the function)
+    phase = _cv_phase.get() or _phase
+    
     # Check cache first (for identical questions, skip rate limits for cache hits)
     model_name = request.model or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-4o-mini"
     cache_key = _get_chat_cache_key(request.message, conv_id, user_id, model_name)
@@ -983,8 +986,6 @@ async def chat_endpoint(
     if len(msgs) > MAX_HISTORY_MESSAGES * 3:
         del msgs[: len(msgs) - MAX_HISTORY_MESSAGES * 2]
     # Формируем history_context (исключая только что добавленное user сообщение)
-    # Берём phase из contextvar, а если отсутствует (старый decorator) — используем _phase если передан
-    phase = _cv_phase.get() or _phase
     if phase: 
         phase.start("history")
         history_start = time.perf_counter()

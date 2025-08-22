@@ -98,15 +98,15 @@ async def dynamic_openai_complete(prompt: str, *args, **kwargs) -> str:  # noqa:
 	api_key = os.getenv("OPENAI_API_KEY")
 	if not api_key:
 		raise ValueError("OPENAI_API_KEY is required for dynamic_openai_complete")
-	primary_model = os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-4o-mini"
+	primary_model = os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-5-mini"
 	fallback_env = os.getenv("OPENAI_FALLBACK_MODELS", "").strip()
 	fallback_list = [m.strip() for m in fallback_env.split(",") if m.strip()]
 	models_to_try: List[str] = []
 	if primary_model:
 		models_to_try.append(primary_model)
-	# Ensure at least one stable fallback (gpt-4o-mini).
-	if primary_model != "gpt-4o-mini" and "gpt-4o-mini" not in fallback_list:
-		fallback_list.append("gpt-4o-mini")
+	# Ensure at least one stable fallback (gpt-4.1).
+	if primary_model != "gpt-4.1" and "gpt-4.1" not in fallback_list:
+		fallback_list.append("gpt-4.1")
 	for m in fallback_list:
 		if m not in models_to_try:
 			models_to_try.append(m)

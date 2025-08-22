@@ -957,7 +957,7 @@ async def chat_endpoint(
     phase = _cv_phase.get() or _phase
     
     # Check cache first (for identical questions, skip rate limits for cache hits)
-    model_name = request.model or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-4o-mini"
+    model_name = request.model or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-5-mini"
     cache_key = _get_chat_cache_key(request.message, conv_id, user_id, model_name)
     
     if phase: phase.start("cache_check")

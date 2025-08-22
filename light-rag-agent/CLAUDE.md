@@ -79,6 +79,12 @@
 - **JWT authentication** with API key validation
 - **Prometheus metrics** for monitoring
 
+#### AI Model Configuration
+- **Primary Model**: `gpt-5-mini` (latest, faster, cost-effective)
+- **Fallback Models**: `gpt-4.1` → `gpt-4o-mini` (in priority order)
+- **Embedding Model**: `text-embedding-3-large` (highest quality embeddings)
+- **Model Selection Strategy**: Always prefer gpt-5-mini for new features, use fallbacks only for compatibility
+
 #### Performance Optimization
 - **Agent caching**: Use `@lru_cache(maxsize=256)` for agent instances
 - **RAG result caching**: In-memory cache with TTL for frequent queries
@@ -91,13 +97,20 @@
 OPENAI_API_KEY=your_api_key
 RAG_API_KEYS=key1,key2,key3
 
+# AI Models (Updated 2024)
+OPENAI_MODEL=gpt-5-mini                    # Primary model (latest)
+RAG_LLM_MODEL=gpt-5-mini                   # RAG language model
+OPENAI_FALLBACK_MODELS=gpt-4.1,gpt-4o-mini # Fallback chain
+RAG_EMBEDDING_MODEL=text-embedding-3-large # Embedding model
+
 # Timeouts
-OPENAI_TIMEOUT_SECONDS=30
-RAG_AGENT_TIMEOUT_SECONDS=45
-RAG_RETRIEVE_TIMEOUT_SECONDS=15
+OPENAI_TIMEOUT_SECONDS=45
+RAG_AGENT_TIMEOUT_SECONDS=75
+RAG_RETRIEVE_TIMEOUT_SECONDS=45
 
 # Caching
 RAG_CACHE_TTL_SECONDS=300
+RAG_CHAT_CACHE_TTL_SECONDS=1800
 RAG_HISTORY_ASYNC_THRESHOLD=20
 
 # Limits

@@ -5,11 +5,11 @@ echo "=== Fixing OpenAI model configurations ==="
 
 # Create optimized .env for production
 cat > /app/.env.optimized << 'EOF'
-# === FIXED MODEL SETTINGS ===
-OPENAI_MODEL=gpt-4o-mini
-OPENAI_FALLBACK_MODELS=gpt-4o-mini,gpt-3.5-turbo
-RAG_LLM_MODEL=gpt-4o-mini
-RAG_EMBEDDING_MODEL=text-embedding-3-small
+# === UPDATED MODEL SETTINGS (2024) ===
+OPENAI_MODEL=gpt-5-mini
+OPENAI_FALLBACK_MODELS=gpt-4.1,gpt-4o-mini
+RAG_LLM_MODEL=gpt-5-mini
+RAG_EMBEDDING_MODEL=text-embedding-3-large
 
 # === OPTIMIZED TIMEOUTS ===
 OPENAI_TIMEOUT_SECONDS=45
@@ -38,8 +38,8 @@ echo "Created optimized configuration file: /app/.env.optimized"
 # Create a quick ingestion test
 echo "=== Testing ingestion with optimized settings ==="
 
-export OPENAI_MODEL=gpt-4o-mini
-export RAG_LLM_MODEL=gpt-4o-mini
+export OPENAI_MODEL=gpt-5-mini
+export RAG_LLM_MODEL=gpt-5-mini
 export OPENAI_TIMEOUT_SECONDS=45
 export RAG_INGEST_BATCH_SIZE=5
 export RAG_INGEST_CONCURRENT_INSERTS=2
@@ -47,8 +47,8 @@ export RAG_INGEST_CONCURRENT_INSERTS=2
 echo "Environment optimized for faster processing!"
 echo ""
 echo "Key improvements:"
-echo "✅ Fixed gpt-5-mini → gpt-4o-mini (valid model)"
-echo "✅ Fixed gpt-4.1-mini → gpt-4o-mini (valid model)"  
+echo "✅ Updated to latest gpt-5-mini model (faster, more capable)"
+echo "✅ Set gpt-4.1 as primary fallback (high performance)"  
 echo "✅ Reduced timeouts for faster responses"
 echo "✅ Optimized batch processing"
 echo "✅ Added adaptive RAG retrieval timeouts"

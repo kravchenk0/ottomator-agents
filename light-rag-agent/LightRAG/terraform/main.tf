@@ -106,9 +106,19 @@ locals {
     { from = 443, to = 443, description = "HTTPS" }
   ]
   
-  # Add port 8000 if: ALB disabled (direct mode) OR debug_open_app_port is true
-  ingress_ports_app = (!var.enable_alb || var.debug_open_app_port) ? [
-    { from = 8000, to = 8000, description = var.debug_open_app_port ? "DEBUG: Direct 8000 access" : "LightRAG API" }
+  # Add port 8000 if: ALB disabled (direct mode) OR enable_public_api is true OR debug_open_app_port is true
+  should_open_port_8000 = !var.enable_alb || var.enable_public_api || var.debug_open_app_port
+  
+  ingress_ports_app = local.should_open_port_8000 ? [
+    { 
+      from = 8000, 
+      to = 8000, 
+      description = (
+        var.debug_open_app_port ? "DEBUG: Direct 8000 access" : 
+        var.enable_public_api ? "Public API access" : 
+        "LightRAG API"
+      )
+    }
   ] : []
   
   # Combine all ingress rules

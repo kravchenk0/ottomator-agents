@@ -213,6 +213,12 @@ variable "tags" {
   }
 } 
 
+variable "enable_public_api" {
+  description = "Enable public access to port 8000 (even with ALB enabled). Useful for direct API access in production."
+  type        = bool
+  default     = true  # По умолчанию разрешить доступ для совместимости
+}
+
 variable "debug_open_app_port" {
   description = "TEMP: If true, always open port 8000 to 0.0.0.0/0 in instance SG for debugging ALB 504 issues. Turn OFF after troubleshooting."
   type        = bool

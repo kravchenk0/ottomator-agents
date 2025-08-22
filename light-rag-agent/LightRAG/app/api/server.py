@@ -479,9 +479,9 @@ s3_storage: Optional[S3StorageAdapter] = None
 # conversations[conversation_id] = list[ {"role": "user"|"assistant", "content": str} ]
 conversations: Dict[str, List[Dict[str, str]]] = {}
 conversation_meta: Dict[str, Dict[str, float]] = {}  # {id: {created, last_activity}}
-MAX_HISTORY_MESSAGES = int(os.getenv("RAG_MAX_HISTORY_MESSAGES", "12"))  # обрезаем глубину
+MAX_HISTORY_MESSAGES = int(os.getenv("RAG_MAX_HISTORY_MESSAGES", "8"))  # Снижено для ускорения  # обрезаем глубину
 CONVERSATION_TTL_SECONDS = int(os.getenv("RAG_CONVERSATION_TTL_SECONDS", "3600"))  # 1 час по умолчанию
-ASYNC_HISTORY_THRESHOLD = int(os.getenv("RAG_HISTORY_ASYNC_THRESHOLD", "20"))  # порог длины (сообщений) для offload
+ASYNC_HISTORY_THRESHOLD = int(os.getenv("RAG_HISTORY_ASYNC_THRESHOLD", "10"))  # Снижен порог для асинхронности  # порог длины (сообщений) для offload
 USER_RATE_LIMIT = int(os.getenv("RAG_USER_RATE_LIMIT", "10"))  # 10 запросов / окно
 USER_RATE_WINDOW_SECONDS = int(os.getenv("RAG_USER_RATE_WINDOW_SECONDS", "3600"))
 user_rate: Dict[str, Dict[str, float]] = {}  # {user_id: {count, window_start}}
@@ -616,7 +616,7 @@ class _PerfLogger:
 performance_logger = _PerfLogger()
 
 # Chat response caching
-CHAT_CACHE_TTL = int(os.getenv("RAG_CHAT_CACHE_TTL_SECONDS", "1800"))  # 30 минут
+CHAT_CACHE_TTL = int(os.getenv("RAG_CHAT_CACHE_TTL_SECONDS", "3600"))  # 60 минут для лучшего hit rate
 _chat_cache: Dict[str, Tuple[ChatResponse, float]] = {}  # {cache_key: (response, timestamp)}
 
 def _get_chat_cache_key(message: str, conversation_id: str, user_id: str, model: str) -> str:
@@ -639,7 +639,7 @@ def _cache_chat_response(cache_key: str, response: ChatResponse) -> None:
     """Cache chat response."""
     _chat_cache[cache_key] = (response, time.time())
     # Simple cleanup: remove old entries if cache gets too large
-    if len(_chat_cache) > 500:  # Keep cache size reasonable
+    if len(_chat_cache) > 1000:  # Увеличен размер кеша
         now = time.time()
         expired_keys = [k for k, (_, ts) in _chat_cache.items() if now - ts > CHAT_CACHE_TTL]
         for k in expired_keys:
@@ -927,6 +927,69 @@ async def health_secure(_claims=Depends(require_jwt)):
     return await health_check()
 
 
+@app.get("/performance", dependencies=[Depends(require_api_key)])
+async def performance_metrics():
+    """Получение метрик производительности для отладки."""
+    try:
+        from app.utils.monitoring import get_monitor
+        from app.core.performance import get_optimizer
+        
+        monitor = get_monitor()
+        optimizer = get_optimizer()
+        
+        metrics = monitor.get_metrics()
+        recommendations = _get_performance_recommendations(metrics)
+        
+        return {
+            "status": "ok",
+            "performance_metrics": metrics,
+            "slow_requests": monitor.get_slow_requests(),
+            "optimizer_metrics": optimizer.get_metrics(),
+            "recommendations": recommendations,
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        logger.error(f"Error getting performance metrics: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "timestamp": time.time()
+        }
+
+def _get_performance_recommendations(metrics: dict) -> list:
+    """Генерирует рекомендации по оптимизации."""
+    recommendations = []
+    
+    timeout_rate = metrics.get("timeout_rate", 0)
+    if timeout_rate > 10:
+        recommendations.append(f"CRITICAL: High timeout rate ({timeout_rate:.1f}%) - reduce timeouts or optimize RAG")
+    elif timeout_rate > 5:
+        recommendations.append(f"WARNING: Moderate timeout rate ({timeout_rate:.1f}%) - monitor closely")
+    
+    cache_hit_rate = metrics.get("cache_hit_rate", 0)
+    if cache_hit_rate < 20:
+        recommendations.append(f"LOW: Cache hit rate ({cache_hit_rate:.1f}%) - increase TTL or review strategy")
+    elif cache_hit_rate > 70:
+        recommendations.append(f"GOOD: High cache hit rate ({cache_hit_rate:.1f}%)")
+    
+    slow_rate = metrics.get("slow_request_rate", 0)
+    if slow_rate > 25:
+        recommendations.append(f"CRITICAL: High slow request rate ({slow_rate:.1f}%) - review query optimization")
+    
+    avg_time = metrics.get("average_response_time", 0)
+    if avg_time > 30:
+        recommendations.append(f"CRITICAL: Very high avg response ({avg_time:.1f}s) - immediate optimization needed")
+    elif avg_time > 15:
+        recommendations.append(f"WARNING: High avg response ({avg_time:.1f}s) - consider optimizations")
+    elif avg_time < 5:
+        recommendations.append(f"EXCELLENT: Fast avg response ({avg_time:.1f}s)")
+    
+    if not recommendations:
+        recommendations.append("Performance metrics look healthy")
+    
+    return recommendations
+
+
 @app.post(
     "/chat",
     response_model=ChatResponse,
@@ -1023,18 +1086,19 @@ async def chat_endpoint(
         try:
             if phase: phase.start("agent_run")
             
-            # Адаптивный таймаут на основе сложности запроса и истории
-            base_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "120"))
+            # Агрессивная оптимизация таймаутов
+            from app.core.performance import QueryOptimizer
+            query_optimizer = QueryOptimizer()
+            
+            # Используем интеллектуальный расчет таймаута
+            agent_timeout = query_optimizer.get_optimal_timeout(request.message)
+            
+            # Ограничиваем максимальный таймаут
+            max_timeout = int(os.getenv("RAG_AGENT_TIMEOUT_SECONDS", "30"))  # Снижено с 120
+            agent_timeout = min(agent_timeout, max_timeout)
+            
             query_words = len(request.message.split())
             history_length = len(msgs)
-            
-            # Оптимизация: простые запросы = короткий таймаут, сложные = длинный
-            if query_words <= 5 and history_length <= 3:
-                agent_timeout = min(base_timeout, 45)  # Простые запросы
-            elif query_words <= 15 and history_length <= 8:
-                agent_timeout = min(base_timeout, 75)  # Средние запросы
-            else:
-                agent_timeout = base_timeout  # Сложные запросы
             
             logger.info(f"[chat] adaptive timeout: {agent_timeout}s (query_words={query_words}, history_len={history_length})")
             result = await asyncio.wait_for(

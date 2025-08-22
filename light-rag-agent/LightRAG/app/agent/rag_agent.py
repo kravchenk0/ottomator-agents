@@ -20,11 +20,12 @@ from pydantic_ai.agent import Agent
 from lightrag import QueryParam
 
 from app.core import RAGManager, RAGConfig, get_default_config
+from app.core.performance import get_optimizer, QueryOptimizer
 
 logger = logging.getLogger(__name__)
 
 # Простой in-memory кэш для RAG запросов
-RAG_CACHE_TTL = int(os.getenv("RAG_CACHE_TTL_SECONDS", "300"))  # 5 минут
+RAG_CACHE_TTL = int(os.getenv("RAG_CACHE_TTL_SECONDS", "600"))  # 10 минут для лучшего hit rate
 _rag_cache: Dict[str, Tuple[str, float]] = {}  # {query_hash: (result, timestamp)}
 
 # Оптимизированный системный промпт для лучшей производительности
@@ -113,20 +114,22 @@ def _register_tools(agent: Agent) -> Agent:
 					pass
 				return cached_result
 			
-			# Адаптивный таймаут и режим поиска
-			rag = await context.deps.rag_manager.get_rag()
-			query_length = len(search_query.split())
+			# Используем глобальный оптимизатор для кеширования
+			optimizer = get_optimizer()
+			query_optimizer = QueryOptimizer()
 			
-			# Оптимизация: используем более агрессивную адаптацию
-			if query_length <= 3:  # Очень простые запросы
-				retrieve_timeout = int(os.getenv("RAG_RETRIEVE_TIMEOUT_FAST", "10"))
-				search_mode = "local"
-			elif query_length <= 7:  # Средние запросы  
-				retrieve_timeout = int(os.getenv("RAG_RETRIEVE_TIMEOUT_MEDIUM", "30"))
-				search_mode = "hybrid"
-			else:  # Сложные запросы
-				retrieve_timeout = int(os.getenv("RAG_RETRIEVE_TIMEOUT_SECONDS", "60"))
-				search_mode = "mix"
+			# Интеллектуальное определение параметров
+			search_mode = query_optimizer.get_optimal_mode(search_query)
+			retrieve_timeout = query_optimizer.get_optimal_timeout(search_query)
+			
+			# Проверка глобального кеша
+			cache_key = optimizer.get_cache_key(search_query, search_mode)
+			global_cached = optimizer.get_cached(cache_key)
+			if global_cached is not None:
+				logger.info(f"[retrieve] global cache hit for mode={search_mode}")
+				return str(global_cached)
+			
+			rag = await context.deps.rag_manager.get_rag()
 			
 			logger.info(f"[retrieve] query_len={query_length}, timeout={retrieve_timeout}s, mode={search_mode}")
 			
@@ -169,6 +172,9 @@ def _register_tools(agent: Agent) -> Agent:
 			result_str = str(result)
 			_cache_result(search_query, result_str)
 			
+			# Сохраняем в глобальный кеш
+			optimizer.set_cached(cache_key, result_str)
+			
 			# Улучшенная диагностика
 			result_size = len(result_str)
 			try:
@@ -204,7 +210,7 @@ def _register_tools(agent: Agent) -> Agent:
 	return agent
 
 
-@lru_cache(maxsize=256)
+@lru_cache(maxsize=1024)  # Увеличен кеш агентов для лучшей производительности
 def create_agent(model: Optional[str] = None, system_prompt: Optional[str] = None) -> Agent:
 	resolved_model = resolve_agent_model(model)
 	sp = system_prompt or DEFAULT_SYSTEM_PROMPT

@@ -30,8 +30,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip --retries ${PIP_RETRIES} --default-timeout ${PIP_DEFAULT_TIMEOUT} && \
     pip install --no-cache-dir -r requirements.txt --retries ${PIP_RETRIES} --default-timeout ${PIP_DEFAULT_TIMEOUT}
 
-# Copy application code (если нужен .env - смонтируйте или COPY отдельно, здесь умышленно не копируем секреты)
-COPY . .
+# Copy application code (исключаем секреты и ненужные файлы)
+COPY app/ ./app/
+COPY config.yaml ./
+COPY start_api.sh ./
 
 # Create necessary directories
 RUN mkdir -p /app/documents /app/logs && \
@@ -44,8 +46,8 @@ USER lightrag
 EXPOSE 8000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=30s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
-# Default command
-CMD ["uvicorn", "api_server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"] 
+# Default command - правильный путь к модулю с оптимизациями
+CMD ["uvicorn", "app.api.server:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--loop", "uvloop", "--access-log"] 

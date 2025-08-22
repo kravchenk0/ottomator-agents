@@ -57,7 +57,7 @@ if lsof -iTCP:"$PORT" -sTCP:LISTEN -Pn >/dev/null 2>&1; then
     echo "⚠️  Port $PORT already in use. Existing process(es):"
     lsof -iTCP:"$PORT" -sTCP:LISTEN -Pn || true
     echo "🔁 Attempting graceful kill (uvicorn/api_server)..."
-    pkill -f "uvicorn api_server:app" || true
+    pkill -f "uvicorn" || true  # Kill any uvicorn process
     sleep 1
     if lsof -iTCP:"$PORT" -sTCP:LISTEN -Pn >/dev/null 2>&1; then
         echo "❌ Port $PORT still occupied. Abort or set PORT env var to another port."
@@ -71,7 +71,7 @@ echo "🔍 Health:  http://localhost:$PORT/health"
 echo "💡 Env RELOAD=1 для авто-перезапуска | PORT=XXXX для смены порта"
 echo "Ctrl+C to stop"
 
-UVICORN_CMD=(uvicorn api_server:app --host 0.0.0.0 --port "$PORT" --log-level info)
+UVICORN_CMD=(uvicorn app.api.server:app --host 0.0.0.0 --port "$PORT" --log-level info)
 if [[ "$RELOAD" == "1" ]]; then
     UVICORN_CMD+=(--reload)
 fi

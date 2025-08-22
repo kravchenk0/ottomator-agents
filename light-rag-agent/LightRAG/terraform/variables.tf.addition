@@ -1,0 +1,13 @@
+# Добавить эту переменную в variables.tf для улучшенной логики
+
+variable "enable_public_api" {
+  description = "Enable public access to port 8000 (even with ALB enabled). Useful for direct API access in production."
+  type        = bool
+  default     = true  # По умолчанию разрешить доступ для совместимости
+}
+
+variable "debug_open_app_port" {
+  description = "Force open port 8000 for debugging purposes (overrides ALB logic)"
+  type        = bool
+  default     = false
+}

@@ -1,5 +1,7 @@
 # Task Management
 
+_Последнее обновление: 2025-08-22_
+
 ## 📋 Current Tasks
 
 ### 🔥 High Priority
@@ -41,10 +43,12 @@
   - Added PLANNING.md with architecture overview
   - Added TASK.md for task tracking
 
-- [ ] **Update README.md** (2024-01-21)
-  - Document new environment variables
-  - Add performance optimization settings
-  - Include deployment instructions
+- [x] **Update README.md** (2025-08-22) ✅
+  - Обновлена структура и описание проекта
+  - Добавлены API endpoints и примеры
+  - Обновлены переменные окружения и конфигурация
+  - Добавлены разделы мониторинга и безопасности
+  - Создан .env.example файл
 
 ## 🔍 Discovered During Work
 
@@ -102,3 +106,9 @@ RAG_HISTORY_ASYNC_THRESHOLD=20
 - Horizontal scaling with worker pools
 - Advanced monitoring with distributed tracing
 - API versioning and backward compatibility
+
+## 🆕 New Features in Development
+- [ ] **GraphQL API** - Альтернативный API интерфейс
+- [ ] **WebSocket support** - Real-time чат обновления
+- [ ] **Multi-language support** - Поддержка разных языков в RAG
+- [ ] **Plugin system** - Расширяемая архитектура через плагины

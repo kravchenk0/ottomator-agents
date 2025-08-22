@@ -11,7 +11,7 @@ from lightrag import LightRAG
 from lightrag.llm.openai import gpt_4o_mini_complete, openai_embed
 from lightrag.kg.shared_storage import initialize_pipeline_status
 
-from ..utils import monkey_patch_lightrag  # noqa: F401  (ensure patch import)
+# monkey_patch_lightrag был удален - не требуется
 from .config import RAGConfig
 
 logger = logging.getLogger(__name__)

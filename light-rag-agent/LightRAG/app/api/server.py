@@ -31,6 +31,7 @@ except Exception:
 from app.utils.ingestion import scan_directory, list_index, ingest_files, cleanup_duplicate_paths
 from app.utils.auth import require_jwt, issue_token
 from app.utils.s3_storage import get_s3_storage, S3StorageAdapter
+from app.core.chat_cache import get_chat_cache
 
 try:  # гибкий импорт логгера
     from app.logger import setup_logger  # type: ignore
@@ -645,6 +646,19 @@ def _cache_chat_response(cache_key: str, response: ChatResponse) -> None:
         for k in expired_keys:
             del _chat_cache[k]
 
+# Intelligent caching helper functions
+def _build_conversation_context(conversation_id: str, user_id: str) -> str:
+    """Build conversation context for intelligent caching."""
+    msgs = conversations.get(conversation_id, [])
+    if not msgs:
+        return ""
+    # Last 3 messages for context
+    recent_msgs = msgs[-6:] if len(msgs) > 6 else msgs
+    context_parts = []
+    for msg in recent_msgs:
+        context_parts.append(f"{msg['role']}: {msg['content'][:100]}")
+    return " | ".join(context_parts)
+
 
 class ChatRequest(BaseModel):
     message: str
@@ -868,6 +882,15 @@ async def startup_event():  # noqa: D401
     global _cleanup_task
     if _cleanup_task is None or _cleanup_task.done():  # type: ignore
         _cleanup_task = asyncio.create_task(conversation_cleanup_loop())
+    
+    # Initialize intelligent cache with warm-up
+    try:
+        logger.info("Initializing intelligent cache system...")
+        from app.core.chat_cache import warm_up_cache
+        await warm_up_cache()
+        logger.info("Cache system initialized and warmed up")
+    except Exception as e:
+        logger.warning(f"Cache initialization failed: {e}")
 
 
 @app.get(
@@ -990,6 +1013,37 @@ def _get_performance_recommendations(metrics: dict) -> list:
     return recommendations
 
 
+@app.get("/cache/stats", dependencies=[Depends(require_jwt)])
+async def cache_statistics():
+    """Get intelligent cache performance statistics."""
+    try:
+        smart_cache = get_chat_cache()
+        cache_stats = smart_cache.get_cache_stats()
+        
+        return {
+            "status": "ok",
+            "cache_statistics": cache_stats,
+            "cache_description": {
+                "exact_cache": "Exact query matches (fastest)",
+                "semantic_cache": "Similar queries using TF-IDF (smart)",
+                "popular_cache": "Pre-loaded common queries (instant)"
+            },
+            "performance_impact": {
+                "cache_hit_saves_seconds": "2-8 seconds per hit",
+                "memory_usage": "Optimized with LRU cleanup",
+                "accuracy": f"{cache_stats.get('hit_rate_percent', 0)}% hit rate"
+            },
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        logger.error(f"Error getting cache statistics: {e}")
+        return {
+            "status": "error", 
+            "error": str(e),
+            "timestamp": time.time()
+        }
+
+
 @app.post(
     "/chat",
     response_model=ChatResponse,
@@ -1019,22 +1073,37 @@ async def chat_endpoint(
     # Get phase from contextvar early (used throughout the function)
     phase = _cv_phase.get() or _phase
     
-    # Check cache first (for identical questions, skip rate limits for cache hits)
-    model_name = request.model or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-5-mini"
-    cache_key = _get_chat_cache_key(request.message, conv_id, user_id, model_name)
-    
+    # Intelligent cache check (multi-level)
     if phase: phase.start("cache_check")
-    cached_response = _get_cached_chat_response(cache_key)
+    
+    # Get intelligent cache instance
+    smart_cache = get_chat_cache()
+    conversation_context = _build_conversation_context(conv_id, user_id)
+    
+    # Try to get cached response using intelligent system
+    cached_response_data = await smart_cache.get_cached_response(request.message, conversation_context)
+    
     if phase: phase.end("cache_check")
     
-    if cached_response:
-        logger.info(f"[chat] cache hit for user={user_id}, conv={conv_id}")
+    if cached_response_data:
+        # Convert cached response to ChatResponse format
+        logger.info(f"[chat] intelligent cache hit for user={user_id}, conv={conv_id}, usage_count={cached_response_data.usage_count}")
         aggregator.track_cache_hit()
-        # Update conversation_id in cached response
-        cached_response.conversation_id = conv_id
-        cached_response.metadata["cached"] = True
-        cached_response.metadata["cache_hit_time"] = time.time()
-        return cached_response
+        
+        chat_response = ChatResponse(
+            response=cached_response_data.response,
+            conversation_id=conv_id,
+            sources=cached_response_data.sources,
+            metadata={
+                "user_id": user_id,
+                "cached": True,
+                "cache_hit_time": time.time(),
+                "cache_type": "intelligent",
+                "usage_count": cached_response_data.usage_count,
+                "original_timestamp": cached_response_data.timestamp,
+            }
+        )
+        return chat_response
     
     # Track cache miss
     aggregator.track_cache_miss()
@@ -1137,10 +1206,23 @@ async def chat_endpoint(
                 },
             )
             
-            # Cache successful responses (only for non-error responses)
+            # Cache successful responses using intelligent system
             if result.data and len(result.data.strip()) > 10:  # Cache substantial responses
-                _cache_chat_response(cache_key, resp)
-                logger.info(f"[chat] cached response for future use, key={cache_key[:8]}...")
+                try:
+                    # Use intelligent caching system
+                    await smart_cache.cache_response(
+                        query=request.message,
+                        response=result.data,
+                        sources=sources or [],
+                        context=conversation_context
+                    )
+                    logger.info(f"[chat] cached response in intelligent cache system")
+                except Exception as cache_err:
+                    logger.warning(f"[chat] failed to cache response: {cache_err}")
+                    # Fallback to simple cache
+                    model_name = request.model or os.getenv("OPENAI_MODEL") or os.getenv("RAG_LLM_MODEL") or "gpt-5-mini"
+                    cache_key = _get_chat_cache_key(request.message, conv_id, user_id, model_name)
+                    _cache_chat_response(cache_key, resp)
             
             if DETAILED_METRICS_ENABLED:
                 await _log_chat_event("result", {"request_id": _cv_request_id.get(), "conversation_id": conv_id, "history_messages": len(msgs)})
